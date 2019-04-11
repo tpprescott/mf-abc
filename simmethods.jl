@@ -75,13 +75,10 @@ end
 # (B) mapping the Poisson process to an exact trajectory
 
 function bridge_PP(d::Array{Float64,1},f::Array{Int64,1})
-    D = [0;cumsum(d)]
-    pp_fired = Array{Float64,1}()
-    for i in 1:length(d)
-        if d[i]>0
-            append!(pp_fired,rand(Uniform(D[i], D[i+1]), f[i]))
-        end
-    end
+    firings_over_length = d.*rand.(f)
+    D = [0;cumsum(d[1:end-1])]
+    pp_split = broadcast(a->a[1].+a[2],zip(D, firings_over_length))
+    pp_fired = vcat(pp_split...)
     return sort!(pp_fired)
 end
 

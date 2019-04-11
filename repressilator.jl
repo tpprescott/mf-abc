@@ -38,6 +38,6 @@ function summary_statistics(t::Array{Float64,1}, x::Array{Array{Float64,1},1})
     return y
 end
 
-function ss_distance(y1::Array{Array{Float64,1},1},y2::Array{Array{Float64,1},1})
-    return norm(y2-y1)
+function ss_distance(y1::Array{Array{Float64,1},1},y2::Array{Array{Float64,1},1},T::Float64)
+    return norm(y2-y1)/T
 end
