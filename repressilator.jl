@@ -21,3 +21,23 @@ end
 x0 = [0.0; 0.0; 0.0; 40.0; 20.0; 60.0]
 ko = (1.0, 2.0, 5.0, 1000.0, 20.0)
 T = 10.0
+
+function prior_sample()
+    k1 = ko[1]
+    k2 = rand(Uniform(1,4))
+    k3 = ko[3]
+    k4 = ko[4]
+    k5 = rand(Uniform(10,30))
+    return k1,k2,k3,k4,k5
+end
+
+function summary_statistics(t::Array{Float64,1}, x::Array{Array{Float64,1},1})
+    t_obs = 0:1:10
+    idx = [findlast(t .<= to) for to in t_obs]
+    y = x[idx]
+    return y
+end
+
+function ss_distance(y1::Array{Array{Float64,1},1},y2::Array{Array{Float64,1},1})
+    return norm(y2-y1)
+end
