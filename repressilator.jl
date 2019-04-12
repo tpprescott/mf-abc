@@ -18,6 +18,20 @@ function propensity(x::Array{Float64,1}, k::NTuple{5,Float64})
     return vcat(tx_block, degm_block, tl_block, degp_block)
 end
 
+function diff_propensity(x::Array{Float64,1}, k::NTuple{5,Float64})
+
+    dp = zeros(12,6);
+
+    dp[1,6] = -k[4]*k[2].*(k[5].^k[2]).*(x[6].^(k[2]-1))*(k[5].^k[2] + x[6].^k[2]).^(-2);
+    dp[2,4] = -k[4]*k[2].*(k[5].^k[2]).*(x[4].^(k[2]-1))*(k[5].^k[2] + x[4].^k[2]).^(-2);
+    dp[3,5] = -k[4]*k[2].*(k[5].^k[2]).*(x[5].^(k[2]-1))*(k[5].^k[2] + x[5].^k[2]).^(-2);
+    dp[4:6,1:3] = Matrix{Float64}(I,3,3);
+    dp[7:9,1:3] = k[3]*Matrix{Float64}(I,3,3);
+    dp[10:12,4:6] = k[3]*Matrix{Float64}(I,3,3);
+
+    return dp 
+end
+
 x0 = [0.0; 0.0; 0.0; 40.0; 20.0; 60.0]
 ko = (1.0, 2.0, 5.0, 1000.0, 20.0)
 T = 10.0
