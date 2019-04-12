@@ -45,13 +45,11 @@ function prior_sample()
     return k1,k2,k3,k4,k5
 end
 
-function summary_statistics(t::Array{Float64,1}, x::Array{Array{Float64,1},1})
-    t_obs = 0:1:10
-    idx = [findlast(t .<= to) for to in t_obs]
-    y = x[idx]
-    return y
+using Dierckx
+function summary_statistics(t::Array{Float64,1}, x::Array{Float64,2})
+    return vcat([Spline1D(t,x[j,:];k=1)(0:10) for j in 1:size(x,1)]...)
 end
 
-function ss_distance(y1::Array{Array{Float64,1},1},y2::Array{Array{Float64,1},1},T::Float64)
+function ss_distance(y1::Array{Float64,1},y2::Array{Float64,1},T::Float64)
     return norm(y2-y1)/T
 end

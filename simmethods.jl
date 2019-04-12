@@ -39,6 +39,10 @@ end
 
 ######## Tau Leap Simulation
 # Produces trajectory and coarse-grained description of underlying Poisson process
+# The tau leap size adapts according to epsilon (if positive) to limit the rate of change
+# of the propensity function
+# The parameter nc defines reactions as critical if nc firings would send molecule 
+# counts negative: then the reactions are not allowed to proceed according to tau leap.
 
 function tauleap(nu::Array{Float64,2},propensity_fun::Function,diff_propensity_fun::Function,T::Float64,x0::Array{Float64,1},k;
     tau::Float64=0.01,nc::Float64=0.0,epsilon::Float64=0.0)
@@ -88,7 +92,7 @@ function tauleap(nu::Array{Float64,2},propensity_fun::Function,diff_propensity_f
         try_x = x + nu*fired_reactions
     
         if .|((try_x.<0)...)
-            print("Halving!")
+            # print("Halving!\n")
             return t,x,d,f = get_step(tauprime/2, tauprimeprime, t, x, speeds, crit, notcrit) 
             # i.e. if any x component is negative, half tauprime and go again
         end
