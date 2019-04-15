@@ -1,7 +1,6 @@
 using DelimitedFiles
 using StatsBase
 
-
 struct Sample
     ksample::Array{Float64,2}
     dtilde::Array{Float64,1}
@@ -124,6 +123,32 @@ function posthoc(s::Sample, epsilons::Tuple{Float64,Float64}, etas::Tuple{Float6
     return kweights, c_used
 end
 
+function ESS(kweights::Array{Float64,1})
+    return sum(kweights)^2/sum(kweights.^2)
+end
+function ESS_vs_times(kweights::Array{Float64,1}, c_used::Array{Float64,1}, ctilde::Array{Float64,1})
+    return ESS(kweights), sum(ctilde)+sum(c_used)
+end
+function ESS_vs_times(s::Sample, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}=(1.0,1.0))
+    kweights, c_used = posthoc(s, epsilons, etas)
+    return ESS_vs_times(kweights, c_used, s.ctilde)
+end
+function efficiency(a,b,c)
+    ESS_vs_times(a,b,c)[1]/ESS_vs_times(a,b,c)[2]
+end
+
+function estimate_mu(parameterFun::Function, kweights::Array{Float64,1}, ksample::Array{Float64,2})
+    F = [parameterFun(ksample[j,:]) for j in 1:size(ksample,1)]
+    return sum(kweights.*F)/sum(kweights)
+end
+function estimate_mu(parameterFun::Function, kweights::Array{Float64,1},s::Sample)
+    return estimate_mu(parameterFun, kweights, s.ksample)
+end
+function estimate_mu(parameterFun::Function, s::Sample, epsilons::Tuple{Float64,Float64}, etas::Tuple{Float64, Float64}=(1.0,1.0))
+    kweights, c_used = posthoc(s, epsilons, etas)
+    return estimate_mu(parameterFun, kweights, s)
+end
+
 ####################################
 
 simset = readdlm("/scratch/prescott/output_190412_nc3_epsilon1e-2.txt")
@@ -134,15 +159,15 @@ bm = Sample(simset[1:size_bm,:])
 remaining_idx = size_bm+1:size(simset,1)
 
 # Set the values of epsilon to use
-epsilons = (50.0, 50.0)
+epsilons = (40.0, 40.0)
 
-# Get the optimized eta_1, eta_2 (continuation probabilities)
+# Get eta_1, eta_2 (continuation probabilities) optimized for ESS
 eta_mf, phi_mf = get_eta(bm, epsilons, method="mf")
 eta_er, phi_er = get_eta(bm, epsilons, method="er")
 eta_ed, phi_ed = get_eta(bm, epsilons, method="ed")
 eta_abc, phi_abc = get_eta(bm, epsilons, method="abc")
 
-# Get other continuation probabilities
+# Get some other continuation probabilities
 eta_pp = 0.5.*eta_mf .+ 0.5.*(1,1)
     phi_pp = phi(eta_pp,bm,epsilons)
 eta_pm = 0.5.*eta_mf .+ 0.5.*(1,0)
@@ -152,6 +177,30 @@ eta_mp = 0.5.*eta_mf .+ 0.5.*(0,1)
 eta_mm = 0.5.*eta_mf .+ 0.5.*(0,0)
     phi_mm = phi(eta_mm,bm,epsilons)
 
+# Get eta_1, eta_2 (continuation probabilities) optimized for specified functions
+F = [k->Float64(1.9 < k[2] < 2.1),
+     k->Float64(1.2 < k[2] < 1.4),
+     k->k[2]]
+
+eta_mf_Fi, phi_mf_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="mf"), F)...)
+eta_er_Fi, phi_er_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="er"), F)...)
+eta_ed_Fi, phi_ed_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="ed"), F)...)
+
 # Split the remainder of the simulations into independent samples of fixed (common) size
-size_s = 1250
+size_s = 10^3
 sset = [Sample(simset[idx,:]) for idx in Iterators.partition(remaining_idx,size_s)]
+
+using Plots, StatsPlots, KernelDensity
+function plot_efficiencies(bm::Sample, sset::Array{Sample,1}, epsilons::Tuple{Float64, Float64})
+    eta_mf, phi_mf = get_eta(bm, epsilons, method="mf")
+    eta_er, phi_er = get_eta(bm, epsilons, method="er")
+    eta_ed, phi_ed = get_eta(bm, epsilons, method="ed")
+    eta_abc, phi_abc = get_eta(bm, epsilons, method="abc")
+    
+    fig = plot()
+    
+    for etas in [eta_mf, eta_er, eta_ed, eta_abc]
+        plot!(kde(map(s->efficiency(s,epsilons,etas), sset)))
+    end
+    return fig
+end
