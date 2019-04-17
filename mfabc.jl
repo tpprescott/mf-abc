@@ -1,30 +1,26 @@
-include("repressilator.jl")
-include("simmethods.jl")
+struct MFABC
+    syn_data::Function       # Mapping nominal parameter to point in summary statistic space
+    draw_k::Function    # Draw a parameter
+    lofi::Function      # Map parameter to draw (lofi model) in summary statistic space
+    hifi::Function      # Map parameter to draw (hifi model) in summary statistic space (accepts output from lofi for coupling)
+    dist::Function      # Distance in summary statistic space
+end
 
-Random.seed!(123)
-# Create observed data using nominal parameters
-to,xo = gillespieDM(nu, propensity, T, x0, ko)
-yo = summary_statistics(to,xo)
-Random.seed!()
-
-function runpair(i::Int64=1; 
-    timed_flag::Bool=true, epsilon::Float64=0.05, nc::Float64=5.0)
-
-    # Choose a parameter
-    k = prior_sample()
+function runpair(mfabc::MFABC, i::Int64=1; timed_flag::Bool=true)
+    k = mfabc.draw_k()
 
     if timed_flag
-    # Simulate lofidelity and complete hifidelity
-        (tc,xc,d,f),ctilde = @timed tauleap(nu,propensity,diff_propensity,T,x0,k,epsilon=epsilon,nc=nc)
-        (tf,xf),cc = @timed complete_tauleap(nu,propensity,T,x0,k,d,f)
+    # Simulate low-fidelity and complete high-fidelity
+        (yc,pass),ctilde = @timed mfabc.lofi(k)
+        (yf),cc = @timed mfabc.hifi(k,pass)
     else
-        tc,xc,d,f = tauleap(nu,propensity,T,x0,k,epsilon=epsilon,nc=nc)
-        tf,xf = complete_tauleap(nu,propensity,T,x0,k,d,f)
+        yc, pass = mfabc.lofi(k)
+        yf = mfabc.hifi(k,pass)
     end
     
     # Find out distances from data
-    dc = ss_distance(summary_statistics(tc,xc),yo,T)
-    df = ss_distance(summary_statistics(tf,xf),yo,T)
+    dc = mfabc.dist(yc, mfabc.syn_data())
+    df = mfabc.dist(yf, mfabc.syn_data())
 
     if timed_flag
         return (k..., dc, df, ctilde, cc)
