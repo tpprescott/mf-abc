@@ -158,8 +158,7 @@ end
 
 ####################################
 
-function import_simulations(fn::String, size_bm::Int64, size_each_sample::Int64)
-    simset = readdlm(fn)
+function import_simulations(simset::Array{Float64,2}, size_bm::Int64, size_each_sample::Int64)
     # Get benchmark
     bm = Sample(simset[1:size_bm,:])
 
@@ -168,6 +167,12 @@ function import_simulations(fn::String, size_bm::Int64, size_each_sample::Int64)
     sset = [Sample(simset[idx,:]) for idx in Iterators.partition(remaining_idx,size_each_sample)]
 
     return bm, sset
+end
+function import_simulations(fn::String, size_bm::Int64, size_each_sample::Int64)
+    return import_simulations(readdlm(fn), size_bm, size_each_sample)
+end
+function import_simulations(fns::Array{String,1}, size_bm::Int64, size_each_sample::Int64)
+    return import_simulations(vcat([readdlm(fn) for fn in fns]...), size_bm, size_each_sample)
 end
 
 using Plots, StatsPlots, KernelDensity, LaTeXStrings, Printf
@@ -293,9 +298,9 @@ function view_distances(s::Sample, epsilons::Tuple{Float64, Float64})
     plot(; title="Distance from data: low and high fidelity simulations", titlefontsize=10, 
     aspect_ratio=:equal, grid=:none, legend=(0.3,0.9),
     xlabel=L"\tilde{d}(\tilde{y},\tilde{y}_{obs})", ylabel=L"d(y,y_{obs})", labelfontsize=8)
-    scatter!(s.dtilde[Ot .== O], s.d[Ot .== O], markersize=2, label="Matching estimator values")
-    scatter!(s.dtilde[Ot .& .~O], s.d[Ot .& .~O], markersize=2, label="False positive")
-    scatter!(s.dtilde[.~Ot .& O], s.d[.~Ot .& O], markersize=2, label="False negative")
+    scatter!(s.dtilde[Ot .== O], s.d[Ot .== O], markersize=2, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(s.dtilde[Ot .& .~O], s.d[Ot .& .~O], markersize=3, label="False positive")
+    scatter!(s.dtilde[.~Ot .& O], s.d[.~Ot .& O], markersize=3, label="False negative")
     vline!([epsilons[1]], linestyle=:dash, color=[:black], label="")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 end
@@ -307,9 +312,9 @@ function view_distances(s::Sample, epsilons::Tuple{Float64, Float64}, par_n::Int
     # Compare distance by parameter
     plot(; title="Distance from data: by "*par_name, titlefontsize=10, grid=:none, legend=:none,
     xlabel=par_name, ylabel=L"d(y,y_{obs})", labelfontsize=8)
-    scatter!(s.ksample[Ot .== O, par_n], s.d[Ot .== O], markersize=2, label="Matching estimator values")
-    scatter!(s.ksample[Ot .& .~O, par_n], s.d[Ot .& .~O], markersize=2, label="False positive")
-    scatter!(s.ksample[.~Ot .& O, par_n], s.d[.~Ot .& O], markersize=2, label="False negative")
+    scatter!(s.ksample[Ot .== O, par_n], s.d[Ot .== O], markersize=2, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(s.ksample[Ot .& .~O, par_n], s.d[Ot .& .~O], markersize=3, label="False positive")
+    scatter!(s.ksample[.~Ot .& O, par_n], s.d[.~Ot .& O], markersize=3, label="False negative")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 
 end
