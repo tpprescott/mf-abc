@@ -48,34 +48,32 @@ struct GillespieModel
     end
 end
 
+function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, a::Array{Float64}, gm::GillespieModel)
+    a0 = sum(a)
+    if a0>0
+        append!(t_traj, t_traj[end]+rand(Exponential(1/a0)))
+        x[:] += gm.nu[:, rand(Categorical(a./a0))]
+    else
+        append!(t_traj, gm.T)
+    end
+    return nothing
+end
+
+function propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, gm::GillespieModel)
+    speeds[:] = gm.propensity(x, gm.k)
+    return nothing
+end
+
 function gillespieDM(gm::GillespieModel)
-    
-    function gillespie_update(t::Float64, x::Array{Float64,1})
-        a = gm.propensity(x,gm.k)
-        a0 = sum(a)
-        if a0>0
-            aa = a./a0
-            t += rand(Exponential(1/a0))
-            x += gm.nu[:, rand(Categorical(aa))]
-        else
-            print("Propensities: "*prod([@sprintf("%.3f ; ",ai) for ai in a]))
-            t = gm.T
-        end
-        return t, x
-    end 
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
-    
-    t = 0.0
-    x = gm.x0
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(gm.x0)
+    x::Array{Float64,1} = copy(gm.x0)
+    speeds::Array{Float64,1} = gm.propensity(gm.x0, gm.k)
 
-    append!(t_traj,t)
-    append!(x_traj,x)
-
-    while t<gm.T
-        t, x = gillespie_update(t, x)
-        append!(t_traj,t)
+    while t_traj[end] < gm.T
+        propensity!(speeds, x, gm)
+        gillespie_update!(t_traj, x, speeds, gm)
         append!(x_traj,x)
     end
 
