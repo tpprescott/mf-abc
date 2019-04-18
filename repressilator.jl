@@ -1,6 +1,11 @@
 include("simmethods.jl")
 include("mfabc.jl")
 
+# Repressilator model specification contains:
+# - Model in repressilator_model_generator - what to simulate
+# - mf-abc specification (what is low-fidelity, high-fidelity, etc) in repressilator_mfabc_problem
+# - Prior parameter distribution in repressilator_prior
+
 function repressilator_model_generator()
     # Require nu, propensity, x0, ko, T, parameter_uncertainty
     # Optional: diff_propensity
@@ -40,94 +45,59 @@ function repressilator_model_generator()
         return dp 
     end
 
-    
-    function parameter_uncertainty(nominal_parameters::NTuple{5,Float64})
-        k1 = nominal_parameters[1]
-        k2 = rand(Uniform(1,4))
-        k3 = nominal_parameters[3]
-        k4 = nominal_parameters[4]
-        k5 = rand(Uniform(10,30))
-        return k1,k2,k3,k4,k5
-    end
-
-
-    repressilator = ModelGenerator(nu, propensity, x0, ko, T, parameter_uncertainty)
+    repressilator = ModelGenerator(nu, propensity, x0, ko, T)
     repressilator.diff_propensity = diff_propensity
     return repressilator
 
 end
 
-function repressilator_mfabc_problem()
+function repressilator_mfabc_problem(parameter_sampler::Function)
+
     rep_mg = repressilator_model_generator()
     
     function summary_statistics(t::Array{Float64,1}, x::Array{Float64,2})
-        return vcat([Spline1D(t,x[j,:];k=1)(0:10) for j in 1:size(x,1)]...)
+        return vcat([Spline1D(t,x[j,:];k=1)(0:rep_mg.T) for j in 1:size(x,1)]...)
     end
 
     function syn_data()
         Random.seed!(123)
-        t,x = gillespieDM(GillespieModel(rep_mg, nominal=true))
+        t,x = gillespieDM(GillespieModel(rep_mg)) # Simulate the nominal model with a fixed seed
         Random.seed!()
         return summary_statistics(t,x)
     end
 
-    draw_k() = rep_mg.par_uncertainty(rep_mg.k_nominal)
-
     function lofi(k)
-        tlm = TauLeapModel(rep_mg,k)
+        tlm = TauLeapModel(rep_mg, k)
         t,x,d,f = tauleap(tlm, tau=0.01, nc=3.0, epsilon=0.01)
         return summary_statistics(t,x), (tlm,d,f)
     end
 
-    function hifi(k,pass)
-        t,x = complete_tauleap(pass...)
+    # The following hifi *couples* low fidelity and high fidelity simulations:
+    function hifi(k, pass)
+        t, x = complete_tauleap(pass...)
         return summary_statistics(t,x)
     end
 
-    function dist(y1::Array{Float64,1},y2::Array{Float64,1})
+    # # This hifi version would produce independent (uncoupled) high fidelity simulations:
+    # function hifi(k,pass)
+    #     gm = GillespieModel(rep_mg, k)
+    #     t, x = gillespieDM(gm)
+    #     return summary_statistics(t,x)
+    # end
+
+    function distance(y1::Array{Float64,1},y2::Array{Float64,1})
         return norm(y2-y1)/rep_mg.T
     end
     
-    return MFABC(syn_data, draw_k, lofi, hifi, dist)
+    return MFABC(syn_data, parameter_sampler, lofi, hifi, distance)
 end
 
-function viral_model_generator()
-    # Require nu, propensity, x0, ko, T, parameter_uncertainty
-    # Optional: diff_propensity
+function repressilator_prior()
 
-    nu = Float64.([0 1 0 -1 0 0 ; 1 -1 0 0 0 -1 ; 0 0 1 0 -1 -1; 0 0 0 0 0 1])
+    ko = repressilator_model_generator().k_nominal
 
-    function propensity(x::Array{Float64,1}, k::NTuple{6,Float64})
-        return k.*[x[1], x[2], x[1], x[1], x[3], x[2]*x[3]]
-    end
+    k2 = rand(Uniform(1,4))
+    k5 = rand(Uniform(10,30))
 
-    x0 = [1.0, 0.0, 0.0, 0.0]
-    ko = (1.0, 0.025, 100.0, 0.25, 1.9985, 7.5e-5)
-    T = 200.0
-
-    function parameter_uncertainty(nominal_parameters::NTuple{6,Float64})
-        k1 = nominal_parameters[1]*(1.5^rand(Uniform(-1,1))) # Scale by factor between 2/3 and 3/2
-        k2,k3,k4,k5,k6 = nominal_parameters[2:6]
-        return k1,k2,k3,k4,k5,k6
-    end
-
-    viral = ModelGenerator(nu, propensity, x0, ko, T, parameter_uncertainty)
-
-    stochastic_reactions = [true,true,false,true,false,true]
-
-    function deterministic_step(t,x,k)
-        err = (k[3]/k[5])*x[1] - x[3]
-        if abs(1/err)<1
-            tau = (-1/k[5]) * log(1 - abs(1/err))
-        else
-            tau = T-t
-            err = 0
-        end
-        return tau, [0, 0, sign(err), 0]
-    end
-
-    viral.stochastic_reactions = stochastic_reactions
-    viral.deterministic_step = deterministic_step
-    return viral
-
+    return ko[1], k2, ko[3], ko[4], k5
 end

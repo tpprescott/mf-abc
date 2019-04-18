@@ -9,23 +9,21 @@ mutable struct ModelGenerator
     nu::Matrix{Float64}             # Stoichiometric matrix
     propensity::Function            # Propensity function
     x0::Array{Float64,1}            # Initial conditions
-    k_nominal                       # Nominal parameters - type has to match input type of propensity and par_prior
+    k_nominal                       # Nominal parameters - type has to match input type of propensity
     T::Float64                      # Simulation time
-    par_uncertainty::Function       # Generate uncertain parameters
 
     # Optional fields
     diff_propensity::Function       # Differentiated propensity function (for adaptivity of tau-leaping)
     stochastic_reactions::BitArray  # True/False whether the reactions are stochastic
     deterministic_step::Function    # The deterministic reaction wait time and result
 
-    function ModelGenerator(nu::Matrix{Float64}, propensity::Function, x0::Array{Float64,1}, k_nominal, T::Float64, par_uncertainty::Function)
+    function ModelGenerator(nu::Matrix{Float64}, propensity::Function, x0::Array{Float64,1}, k_nominal, T::Float64)
         mg = new()
         mg.nu = nu
         mg.propensity = propensity
         mg.x0 = x0
         mg.k_nominal = k_nominal
         mg.T = T
-        mg.par_uncertainty = par_uncertainty
         return mg
     end 
 
@@ -42,16 +40,11 @@ struct GillespieModel
     T::Float64                      # Simulation time
     
     GillespieModel(nu,propensity,x0,k,T) = new(nu,propensity,x0,k,T)
-    function GillespieModel(mg::ModelGenerator; nominal::Bool=false) 
-        if nominal
-            k = mg.k_nominal
-        else
-            k = mg.par_uncertainty(mg.k_nominal)
-        end
-        return new(mg.nu, mg.propensity, mg.x0, k, mg.T)
+    function GillespieModel(mg::ModelGenerator) 
+        return new(mg.nu, mg.propensity, mg.x0, mg.k_nominal, mg.T)
     end
-    function GillespieModel(mg::ModelGenerator, k_override)
-        return new(mg.nu, mg.propensity, mg.x0, k_override, mg.T)
+    function GillespieModel(mg::ModelGenerator, parameters)
+        return new(mg.nu, mg.propensity, mg.x0, parameters, mg.T)
     end
 end
 
@@ -109,16 +102,11 @@ struct TauLeapModel
     T::Float64                      # Simulation time
     
     TauLeapModel(nu,propensity,diff_propensity,x0,k,T,summ_stat) = new(nu,propensity,diff_propensity,x0,k,T)
-    function TauLeapModel(mg::ModelGenerator; nominal::Bool=false)
-        if nominal
-            k = mg.k_nominal
-        else
-            k = mg.par_uncertainty(mg.k_nominal)
-        end
-        return new(mg.nu, mg.propensity, mg.diff_propensity, mg.x0, k, mg.T)
+    function TauLeapModel(mg::ModelGenerator)
+        return new(mg.nu, mg.propensity, mg.diff_propensity, mg.x0, mg.k_nominal, mg.T)
     end
-    function TauLeapModel(mg::ModelGenerator, k_override)
-        return new(mg.nu, mg.propensity, mg.diff_propensity, mg.x0, k_override, mg.T)
+    function TauLeapModel(mg::ModelGenerator, parameters)
+        return new(mg.nu, mg.propensity, mg.diff_propensity, mg.x0, parameters, mg.T)
     end
 end
 
@@ -228,65 +216,6 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
 
 end
 
-######## Complete a tau-leap into full-scale simulation by
-# (A) making the coarse-grained Poisson process fine-grained
-# (B) mapping the Poisson process to an exact trajectory
-
-function bridge_PP(d::Array{Float64,2},f::Array{Int64,2})
-    nr = size(d,1)
-    firings = d[:,2:end].*rand.(f[:,2:end])
-    D = cumsum(d,dims=2)
-    pp_split = broadcast((a,b)->a.+b, D[:,1:end-1], firings)
-    sort!.(pp_split)
-    pp_fired = [vcat(pp_split[j,:]...) for j = 1:nr]
-    return pp_fired
-end
-
-function map_pp_to_trajectory(tlm::Union{TauLeapModel,HybridModel}, pp_set::Array{Array{Float64,1},1})
-
-    t_traj = Array{Float64,1}()
-    x_traj = Array{Float64,1}()
-
-    t=0
-    x = tlm.x0
-    
-    append!(t_traj,t)
-    append!(x_traj,x)
-
-    (nx,nr) = size(tlm.nu)
-    d = zeros(nr)
-    next_event_d = randexp(nr)
-    for j in 1:nr
-        if ~isempty(pp_set[j])
-            next_event_d[j] = popfirst!(pp_set[j])
-        end
-    end
-
-    while t<tlm.T
-        speed = tlm.propensity(x,tlm.k)
-        (tau,j) = findmin((next_event_d - d)./speed)
-        d += speed*tau
-        if isempty(pp_set[j])
-            next_event_d[j] += randexp()
-        else
-            next_event_d[j] = popfirst!(pp_set[j])
-        end
-        
-        t += tau
-        x += tlm.nu[:,j]
-
-        append!(t_traj,t)
-        append!(x_traj,x)
-    end
-
-    nt = length(t_traj)
-    return t_traj, reshape(x_traj,(nx,nt))
-end
-
-function complete_tauleap(tlm::TauLeapModel, d_traj::Array{Float64,2}, f_traj::Array{Int64,2})
-    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj,f_traj))
-end
-
 ######## Hybrid deterministic/continuous simulation
 # Produces trajectory and Poisson process of the stochastic firings
 
@@ -300,16 +229,11 @@ struct HybridModel
     deterministic_step::Function    # The deterministic reaction wait time and result
     
     HybridModel(nu,propensity,x0,k,T) = new(nu,propensity,x0,k,T,stochastic_reactions,deterministic_step)
-    function HybridModel(mg::ModelGenerator; nominal::Bool=false) 
-        if nominal
-            k = mg.k_nominal
-        else
-            k = mg.par_uncertainty(mg.k_nominal)
-        end
-        return new(mg.nu, mg.propensity, mg.x0, k, mg.T, mg.stochastic_reactions, mg.deterministic_step)
+    function HybridModel(mg::ModelGenerator) 
+        return new(mg.nu, mg.propensity, mg.x0, mg.k_nominal, mg.T, mg.stochastic_reactions, mg.deterministic_step)
     end
-    function GillespieModel(mg::ModelGenerator, k_override)
-        return new(mg.nu, mg.propensity, mg.x0, k_override, mg.T, mg.stochastic_reactions, mg.deterministic_step)
+    function HybridModel(mg::ModelGenerator, parameters)
+        return new(mg.nu, mg.propensity, mg.x0, parameters, mg.T, mg.stochastic_reactions, mg.deterministic_step)
     end
 end
 
@@ -359,6 +283,73 @@ function hybrid(hm::HybridModel)
 
     n_t = length(t_traj)
     return t_traj, reshape(x_traj,(n_x, n_t)), pp_set
+end
+
+
+######## Coupling methods, based on
+# (A) making a coarse-grained Poisson process fine-grained
+# (B) mapping a known Poisson process to an exact trajectory (filling in gaps where needed)
+
+function bridge_PP(d::Array{Float64,2},f::Array{Int64,2})
+    nr = size(d,1)
+    firings = d[:,2:end].*rand.(f[:,2:end])
+    D = cumsum(d,dims=2)
+    pp_split = broadcast((a,b)->a.+b, D[:,1:end-1], firings)
+    sort!.(pp_split)
+    pp_fired = [vcat(pp_split[j,:]...) for j = 1:nr]
+    return pp_fired
+end
+
+function map_pp_to_trajectory(mdl::Union{TauLeapModel,HybridModel}, pp_set::Array{Array{Float64,1},1})
+
+    t_traj = Array{Float64,1}()
+    x_traj = Array{Float64,1}()
+
+    t=0
+    x = mdl.x0
+    
+    append!(t_traj,t)
+    append!(x_traj,x)
+
+    (nx,nr) = size(mdl.nu)
+    d = zeros(nr)
+    next_event_d = randexp(nr)
+    for j in 1:nr
+        if ~isempty(pp_set[j])
+            next_event_d[j] = popfirst!(pp_set[j])
+        end
+    end
+
+    while t<mdl.T
+        speed = mdl.propensity(x,mdl.k)
+        (tau,j) = findmin((next_event_d - d)./speed)
+        d += speed*tau
+        if isempty(pp_set[j])
+            next_event_d[j] += randexp()
+        else
+            next_event_d[j] = popfirst!(pp_set[j])
+        end
+        
+        if isfinite(tau)
+            t += tau
+            x += mdl.nu[:,j]
+        else
+            t = mdl.T
+        end
+
+        append!(t_traj,t)
+        append!(x_traj,x)
+    end
+
+    nt = length(t_traj)
+    return t_traj, reshape(x_traj,(nx,nt))
+end
+
+
+######### Apply coupling methods
+
+function complete_tauleap(tlm::TauLeapModel, d_traj::Array{Float64,2}, f_traj::Array{Int64,2})
+    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj,f_traj))
 end
 
 function complete_hybrid(hm::HybridModel, pp_set::Array{Array{Float64,1},1})

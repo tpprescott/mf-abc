@@ -1,13 +1,15 @@
 struct MFABC
-    syn_data::Function       # Mapping nominal parameter to point in summary statistic space
-    draw_k::Function    # Draw a parameter
-    lofi::Function      # Map parameter to draw (lofi model) in summary statistic space
-    hifi::Function      # Map parameter to draw (hifi model) in summary statistic space (accepts output from lofi for coupling)
-    dist::Function      # Distance in summary statistic space
+    syn_data::Function          # Calling will map the nominal parameter to point in summary statistic space
+    parameter_sampler::Function # Parameter sampler
+    lofi::Function              # Map parameter to draw (lofi model) in summary statistic space
+    hifi::Function              # Map parameter to draw (hifi model) in summary statistic space (accepts output from lofi for coupling)
+    distance::Function          # Distance in summary statistic space
 end
 
 function runpair(mfabc::MFABC, i::Int64=1; timed_flag::Bool=true)
-    k = mfabc.draw_k()
+    
+    yo = mfabc.syn_data()
+    k = mfabc.parameter_sampler()
 
     if timed_flag
     # Simulate low-fidelity and complete high-fidelity
@@ -19,8 +21,8 @@ function runpair(mfabc::MFABC, i::Int64=1; timed_flag::Bool=true)
     end
     
     # Find out distances from data
-    dc = mfabc.dist(yc, mfabc.syn_data())
-    df = mfabc.dist(yf, mfabc.syn_data())
+    dc = mfabc.distance(yc, yo)
+    df = mfabc.distance(yf, yo)
 
     if timed_flag
         return (k..., dc, df, ctilde, cc)
