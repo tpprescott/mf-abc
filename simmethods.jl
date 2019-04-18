@@ -175,7 +175,7 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
 
     function backstep!(t_traj, x_traj, x)
         pop!(t_traj)
-        x = x_traj[end-(length(x)-1):end]
+        x[:] = x_traj[end-(length(x)-1):end]
     end
 
     (nx, nr) = size(tlm.nu)
