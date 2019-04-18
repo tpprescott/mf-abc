@@ -58,13 +58,6 @@ function viral_mfabc_problem(parameter_sampler::Function)
         return collect.(outputs)
     end
 
-    function syn_data()
-        Random.seed!(123)
-        t_pop, x_pop = simulate_population(gillespieDM, GillespieModel(vir_mg)) # Simulate the nominal model with a fixed seed
-        Random.seed!()
-        return summary_statistics(t_pop, x_pop)
-    end
-
     function lofi(k)
         hm = HybridModel(vir_mg, k)
         t_pop, x_pop, pp_set_pop = simulate_population(hybrid, hm)
@@ -84,11 +77,16 @@ function viral_mfabc_problem(parameter_sampler::Function)
     #     return summary_statistics(t,x)
     # end
 
-    function distance(y1::Array{Float64,1},y2::Array{Float64,1})
-        return norm(y2-y1)/vir_mg.T
+    Random.seed!(123)
+    t_pop, x_pop = simulate_population(gillespieDM, GillespieModel(vir_mg)) # Simulate the nominal model with a fixed seed
+    Random.seed!()
+    yo = summary_statistics(t_pop, x_pop)
+
+    function distance(y::Array{Float64,1})
+        return norm(y-yo)/vir_mg.T
     end
     
-    return MFABC(syn_data, parameter_sampler, lofi, hifi, distance)
+    return MFABC(parameter_sampler, lofi, hifi, distance)
 end
 
 function viral_prior()

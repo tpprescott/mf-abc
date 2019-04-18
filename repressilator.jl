@@ -59,13 +59,6 @@ function repressilator_mfabc_problem(parameter_sampler::Function)
         return vcat([Spline1D(t,x[j,:];k=1)(0:rep_mg.T) for j in 1:size(x,1)]...)
     end
 
-    function syn_data()
-        Random.seed!(123)
-        t,x = gillespieDM(GillespieModel(rep_mg)) # Simulate the nominal model with a fixed seed
-        Random.seed!()
-        return summary_statistics(t,x)
-    end
-
     function lofi(k)
         tlm = TauLeapModel(rep_mg, k)
         t,x,d,f = tauleap(tlm, tau=0.01, nc=3.0, epsilon=0.01)
@@ -85,11 +78,16 @@ function repressilator_mfabc_problem(parameter_sampler::Function)
     #     return summary_statistics(t,x)
     # end
 
-    function distance(y1::Array{Float64,1},y2::Array{Float64,1})
-        return norm(y2-y1)/rep_mg.T
+    Random.seed!(123)
+    t,x = gillespieDM(GillespieModel(rep_mg)) # Simulate the nominal model with a fixed seed
+    Random.seed!()
+    yo = summary_statistics(t,x)
+
+    function distance(y::Array{Float64,1})
+        return norm(y-yo)/rep_mg.T
     end
     
-    return MFABC(syn_data, parameter_sampler, lofi, hifi, distance)
+    return MFABC(parameter_sampler, lofi, hifi, distance)
 end
 
 function repressilator_prior()

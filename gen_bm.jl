@@ -1,8 +1,10 @@
 using Distributed
-using DelimitedFiles
-@everywhere include("mfabc.jl")
+@everywhere include("repressilator.jl")
+@everywhere include("viral.jl")
 
-function get_benchmark(N::Int64,outfile::String="./output.txt")
-    output = pmap(i->runpair(i,nc=3.0,epsilon=0.01), 1:N)
-    writedlm(outfile,output)
-end
+r_mf = repressilator_mfabc_problem(repressilator_prior)
+v_mf = viral_mfabc_problem(viral_prior)
+
+# Test
+r_out = get_benchmark(r_mf)
+v_out = get_benchmark(v_mf)
