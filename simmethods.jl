@@ -48,34 +48,32 @@ struct GillespieModel
     end
 end
 
+function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, a::Array{Float64}, gm::GillespieModel)
+    a0 = sum(a)
+    if a0>0
+        append!(t_traj, t_traj[end]+rand(Exponential(1/a0)))
+        x[:] += gm.nu[:, rand(Categorical(a./a0))]
+    else
+        append!(t_traj, gm.T)
+    end
+    return nothing
+end
+
+function propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, model)
+    speeds[:] = model.propensity(x, model.k)
+    return nothing
+end
+
 function gillespieDM(gm::GillespieModel)
-    
-    function gillespie_update(t::Float64, x::Array{Float64,1})
-        a = gm.propensity(x,gm.k)
-        a0 = sum(a)
-        if a0>0
-            aa = a./a0
-            t += rand(Exponential(1/a0))
-            x += gm.nu[:, rand(Categorical(aa))]
-        else
-            print("Propensities: "*prod([@sprintf("%.3f ; ",ai) for ai in a]))
-            t = gm.T
-        end
-        return t, x
-    end 
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
-    
-    t = 0.0
-    x = gm.x0
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(gm.x0)
+    x::Array{Float64,1} = copy(gm.x0)
+    speeds::Array{Float64,1} = gm.propensity(gm.x0, gm.k)
 
-    append!(t_traj,t)
-    append!(x_traj,x)
-
-    while t<gm.T
-        t, x = gillespie_update(t, x)
-        append!(t_traj,t)
+    while t_traj[end] < gm.T
+        propensity!(speeds, x, gm)
+        gillespie_update!(t_traj, x, speeds, gm)
         append!(x_traj,x)
     end
 
@@ -110,102 +108,120 @@ struct TauLeapModel
     end
 end
 
+function diff_propensity!(diffspeeds::Array{Float64,2}, x::Array{Float64, 1}, tlm::TauLeapModel)
+    diffspeeds[:,:] = tlm.diff_propensity(x, tlm.k)
+    return nothing
+end
+
 function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon::Float64=0.0)
     
-    function decide_critical(nu_j::Array{Float64,1}, x::Array{Float64,1}, speed::Float64, nc::Float64)
-        if speed==0
-            return false
+    function decide_critical!(critical::Array{Bool,1}, x::Array{Float64,1}, speeds::Array{Float64,1}, L::Array{Float64,1}, critnu::Array{Bool,2}, posscrit::Array{Bool,1}, nc::Float64, tlm::TauLeapModel)
+        for j in 1:length(critical)
+            if posscrit[j]
+                if speeds[j]==0
+                    critical[j] = false
+                else
+                    L[j] = minimum(ceil.(x[critnu[:,j]]./abs.(tlm.nu[critnu[:,j],j])))
+                    critical[j] = (L[j] <= nc)
+                end
+            end
         end
-        L_j = minimum([ceil(x_i/abs(nu_ij)) for (x_i, nu_ij) in zip(x, nu_j) if nu_ij<0])
-        return L_j <= nc
+        return nothing
     end
 
-    function largest_timestep(nu::Array{Float64,2}, speeds::Array{Float64,1}, diff_speeds::Array{Float64,2}, notcrit::Array{Int64,1},
-        epsilon::Float64)
+    function largest_timestep(speeds::Array{Float64,1}, diffspeeds::Array{Float64,2}, critical::Array{Bool,1}, epsilon::Float64, tlm::TauLeapModel)
+        # largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
         
-        nr = size(nu,2)
+        nr = size(tlm.nu,2)
         
-        if isempty(notcrit)
+        if .&(critical...)
             return Inf64
         else
-            F = diff_speeds[notcrit,:] * nu[:,notcrit]
-            mu = F*speeds[notcrit]
-            sigma2 = (F.^2)*speeds[notcrit]
+            F = diffspeeds[.!critical, :] * tlm.nu[:, .!critical]
+            mu = F*speeds[.!critical]
+            sigma2 = (F.^2)*speeds[.!critical]
             v1 = epsilon*sum(speeds)./abs.(mu)
             v2 = ((epsilon*sum(speeds))^2)./sigma2
             return minimum([v1;v2])
         end
     end
 
-    function get_step(tauprime, tauprimeprime, t, x, speeds, crit, noncrit)
-        
+    function do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        # do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical)
+ 
         nr = length(speeds)
 
         tau_adaptive = min(tauprime,tauprimeprime)
-        distance_travelled = tau_adaptive*speeds
-
-        fired_reactions = zeros(nr)
-        fired_reactions[noncrit] .= rand.(Poisson.(distance_travelled[noncrit]))
-        # Only looking at non-critical fired reactions
-
+        d[:] = tau_adaptive*speeds
+        
         if tauprimeprime < tauprime
-            crit_k = rand(Categorical((speeds[crit])/sum(speeds[crit])))
-            fired_reactions[crit[crit_k]] = 1 # Add in a single critical reaction if it fired first
+            fired_critical = rand(Categorical((speeds[critical])/sum(speeds[critical])))
+        else
+            fired_critical = -1
         end
 
-        try_t = t + tau_adaptive
-        try_x = x + tlm.nu*fired_reactions
-    
-        if .|((try_x.<0)...)
-            # print("Halving!\n")
-            return t,x,d,f = get_step(tauprime/2, tauprimeprime, t, x, speeds, crit, notcrit) 
-            # i.e. if any x component is negative, half tauprime and go again
+        for j in 1:nr
+            if !critical[j]
+                f[j] = rand(Poisson(d[j]))
+            elseif j == fired_critical
+                f[j] = 1
+            else
+                f[j] = 0
+            end
         end
-
-        return try_t, try_x, distance_travelled, fired_reactions
+        append!(t_traj, t_traj[end]+tau_adaptive) 
+        x[:] += tlm.nu*f
     end
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
-    d_traj=Array{Float64,1}()
-    f_traj=Array{Int64,1}()
-
-    nx, nr = size(tlm.nu)
-    if nc==0
-        posscrit = []
-    else
-        posscrit = filter(j->(minimum(tlm.nu[:,j])<0),1:nr)
+    function backstep!(t_traj, x_traj, x)
+        pop!(t_traj)
+        x[:] = x_traj[end-(length(x)-1):end]
     end
-    notcrit = setdiff(1:nr,posscrit)
+
+    (nx, nr) = size(tlm.nu)
+
+    t_traj::Array{Float64,1} = [0]
+    x_traj::Array{Float64,1} = copy(tlm.x0)
+    x::Array{Float64,1} = copy(tlm.x0)
+
+    d_traj::Array{Float64,1} = zeros(nr)
+    f_traj::Array{Int64,1} = zeros(nr)
+    d = zeros(nr)
+    f = zeros(nr)
     
-    t=0
-    x = tlm.x0
-    append!(t_traj,t)
-    append!(x_traj,x)
-    append!(d_traj,zeros(nr))
-    append!(f_traj,zeros(nr))
+    L::Array{Float64,1} = zeros(nr)
+    speeds::Array{Float64,1} = zeros(nr)
+    diffspeeds::Array{Float64,2} = zeros(nr, nx)
 
-    while t<tlm.T
-        speeds = tlm.propensity(x,tlm.k)
-        crit_j = filter(j->decide_critical(tlm.nu[:,j],x,speeds[j],nc),posscrit)
-        notcrit_j = setdiff(1:nr,crit_j)
+    critnu::Array{Bool,2} = (tlm.nu .< 0)
+    critical::Array{Bool,1} = [minimum(tlm.nu[:,j])<0 for j in 1:nr]
+    posscrit::Array{Bool,1} = [minimum(tlm.nu[:,j])<0 for j in 1:nr]
+    
+    
+    while t_traj[end] < tlm.T
+        propensity!(speeds, x, tlm)
+        decide_critical!(critical, x, speeds, L, critnu, posscrit, nc, tlm)
 
         if epsilon>0
-            diff_speeds = tlm.diff_propensity(x,tlm.k)
-            tauprime = largest_timestep(tlm.nu, speeds, diff_speeds, notcrit_j, epsilon)
+            diff_propensity!(diffspeeds, x, tlm)
+            tauprime = largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
         else
             tauprime = tau
         end
 
-        if isempty(crit_j)
-            tauprimeprime = Inf64
+        if |(critical...)
+            tauprimeprime = rand(Exponential(1/sum(speeds[critical])))
         else
-            tauprimeprime = rand(Exponential(1/sum(speeds[crit_j])))
+            tauprimeprime = Inf64
         end
 
-        t, x, d, f = get_step(tauprime, tauprimeprime, t, x, speeds, crit_j, notcrit_j)
+        do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        while .|((x.<0)...)
+            backstep!(t_traj, x_traj, x)
+            tauprime /= 2
+            do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        end
 
-        append!(t_traj,t)
         append!(x_traj,x)
         append!(d_traj,d)
         append!(f_traj,f)
@@ -237,47 +253,49 @@ struct HybridModel
     end
 end
 
+function reduced_propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, model::HybridModel)
+    speeds[:] = model.propensity(x, model.k) .* model.stochastic_reactions
+    return nothing
+end
+
+function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Float64,1}, pp_set::Array{Array{Float64,1},1}, speeds::Array{Float64,1}, hm::HybridModel)
+    
+    tau_det, nu_j_det = hm.deterministic_step(t_traj[end], x, hm.k)    
+    a0 = sum(speeds)
+    if a0>0
+        tau_sto = rand(Exponential(1/a0))
+    else
+        tau_sto = Inf64
+    end
+
+    if tau_det <= tau_sto
+        append!(t_traj, t_traj[end]+tau_det)
+        x[:] += nu_j_det
+        d[:] += tau_det*speeds
+    else
+        append!(t_traj, t_traj[end]+tau_sto)
+        j = rand(Categorical(speeds./a0))
+        x[:] += hm.nu[:,j]
+        d[:] += tau_sto*speeds
+        append!(pp_set[j],d[j])
+    end
+end
+
 function hybrid(hm::HybridModel)
 
     (n_x, n_r) = size(hm.nu)
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(hm.x0)
+    x::Array{Float64,1} = copy(hm.x0)
     
     pp_set=[Float64[] for i in 1:n_r]
-    d = zeros(n_r)
+    d::Array{Float64,1} = zeros(n_r)
+    speeds::Array{Float64,1} = zeros(n_r)
     
-    t = 0.0
-    x = hm.x0
-    
-    append!(t_traj,t)
-    append!(x_traj,x)
-
-    while t<hm.T
-        
-        tau_det, nu_j_det = hm.deterministic_step(t,x,hm.k)
-        speeds = hm.propensity(x,hm.k) .* hm.stochastic_reactions
-        
-        a0 = sum(speeds)
-        if a0>0
-            tau_sto = rand(Exponential(1/a0))
-        else
-            tau_sto = Inf64
-        end
-
-        if tau_det <= tau_sto
-            t += tau_det
-            x += nu_j_det
-            d += tau_det*speeds
-        else
-            t += tau_sto
-            j = rand(Categorical(speeds./a0))
-            x += hm.nu[:,j]
-            d += tau_sto*speeds
-            append!(pp_set[j],d[j])
-        end
-
-        append!(t_traj,t)
+    while t_traj[end] < hm.T
+        reduced_propensity!(speeds, x, hm)
+        hybrid_step!(t_traj, x, d, pp_set, speeds, hm)
         append!(x_traj,x)
     end
 
@@ -300,44 +318,43 @@ function bridge_PP(d::Array{Float64,2},f::Array{Int64,2})
     return pp_fired
 end
 
+function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, next_event_d::Array{Float64, 1}, d::Array{Float64,1}, pps::Array{Array{Float64,1},1}, a::Array{Float64,1}, mdl)
+    tau, j = findmin((next_event_d - d)./a)
+    d[:] += a*tau
+    if isempty(pps[j])
+        next_event_d[j] += randexp()
+    else
+        next_event_d[j] = popfirst!(pps[j])
+    end
+    if isfinite(tau)
+        append!(t_traj, t_traj[end]+tau)
+        x[:] += mdl.nu[:,j]
+    else
+        append!(t_traj, mdl.T)
+    end
+end
+
 function map_pp_to_trajectory(mdl::Union{TauLeapModel,HybridModel}, pp_set::Array{Array{Float64,1},1})
 
-    t_traj = Array{Float64,1}()
-    x_traj = Array{Float64,1}()
-
-    t=0
-    x = mdl.x0
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(mdl.x0)
+    x = copy(mdl.x0)
+    pp = deepcopy(pp_set)
     
-    append!(t_traj,t)
-    append!(x_traj,x)
-
     (nx,nr) = size(mdl.nu)
     d = zeros(nr)
+    speed = zeros(nr)
+
     next_event_d = randexp(nr)
     for j in 1:nr
-        if ~isempty(pp_set[j])
-            next_event_d[j] = popfirst!(pp_set[j])
+        if ~isempty(pp[j])
+            next_event_d[j] = popfirst!(pp[j])
         end
     end
 
-    while t<mdl.T
-        speed = mdl.propensity(x,mdl.k)
-        (tau,j) = findmin((next_event_d - d)./speed)
-        d += speed*tau
-        if isempty(pp_set[j])
-            next_event_d[j] += randexp()
-        else
-            next_event_d[j] = popfirst!(pp_set[j])
-        end
-        
-        if isfinite(tau)
-            t += tau
-            x += mdl.nu[:,j]
-        else
-            t = mdl.T
-        end
-
-        append!(t_traj,t)
+    while t_traj[end] < mdl.T
+        propensity!(speed, x, mdl)
+        gillespie_update!(t_traj, x, next_event_d, d, pp, speed, mdl)
         append!(x_traj,x)
     end
 
@@ -349,9 +366,9 @@ end
 ######### Apply coupling methods
 
 function complete_tauleap(tlm::TauLeapModel, d_traj::Array{Float64,2}, f_traj::Array{Int64,2})
-    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj,f_traj))
+    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj, f_traj))
 end
 
 function complete_hybrid(hm::HybridModel, pp_set::Array{Array{Float64,1},1})
-    t_traj, x_traj = map_pp_to_trajectory(hm,pp_set)
+    t_traj, x_traj = map_pp_to_trajectory(hm, pp_set)
 end
