@@ -108,102 +108,120 @@ struct TauLeapModel
     end
 end
 
+function diff_propensity!(diffspeeds::Array{Float64,2}, x::Array{Float64, 1}, tlm::TauLeapModel)
+    diffspeeds[:,:] = tlm.diff_propensity(x, tlm.k)
+    return nothing
+end
+
 function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon::Float64=0.0)
     
-    function decide_critical(nu_j::Array{Float64,1}, x::Array{Float64,1}, speed::Float64, nc::Float64)
-        if speed==0
-            return false
+    function decide_critical!(critical::Array{Bool,1}, x::Array{Float64,1}, speeds::Array{Float64,1}, L::Array{Float64,1}, critnu::Array{Bool,2}, posscrit::Array{Bool,1}, nc::Float64, tlm::TauLeapModel)
+        for j in 1:length(critical)
+            if posscrit[j]
+                if speeds[j]==0
+                    critical[j] = false
+                else
+                    L[j] = minimum(ceil.(x[critnu[:,j]]./abs.(tlm.nu[critnu[:,j],j])))
+                    critical[j] = (L[j] <= nc)
+                end
+            end
         end
-        L_j = minimum([ceil(x_i/abs(nu_ij)) for (x_i, nu_ij) in zip(x, nu_j) if nu_ij<0])
-        return L_j <= nc
+        return nothing
     end
 
-    function largest_timestep(nu::Array{Float64,2}, speeds::Array{Float64,1}, diff_speeds::Array{Float64,2}, notcrit::Array{Int64,1},
-        epsilon::Float64)
+    function largest_timestep(speeds::Array{Float64,1}, diffspeeds::Array{Float64,2}, critical::Array{Bool,1}, epsilon::Float64, tlm::TauLeapModel)
+        # largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
         
-        nr = size(nu,2)
+        nr = size(tlm.nu,2)
         
-        if isempty(notcrit)
+        if .&(critical...)
             return Inf64
         else
-            F = diff_speeds[notcrit,:] * nu[:,notcrit]
-            mu = F*speeds[notcrit]
-            sigma2 = (F.^2)*speeds[notcrit]
+            F = diffspeeds[.!critical, :] * tlm.nu[:, .!critical]
+            mu = F*speeds[.!critical]
+            sigma2 = (F.^2)*speeds[.!critical]
             v1 = epsilon*sum(speeds)./abs.(mu)
             v2 = ((epsilon*sum(speeds))^2)./sigma2
             return minimum([v1;v2])
         end
     end
 
-    function get_step(tauprime, tauprimeprime, t, x, speeds, crit, noncrit)
-        
+    function do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        # do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical)
+ 
         nr = length(speeds)
 
         tau_adaptive = min(tauprime,tauprimeprime)
-        distance_travelled = tau_adaptive*speeds
-
-        fired_reactions = zeros(nr)
-        fired_reactions[noncrit] .= rand.(Poisson.(distance_travelled[noncrit]))
-        # Only looking at non-critical fired reactions
-
+        d[:] = tau_adaptive*speeds
+        
         if tauprimeprime < tauprime
-            crit_k = rand(Categorical((speeds[crit])/sum(speeds[crit])))
-            fired_reactions[crit[crit_k]] = 1 # Add in a single critical reaction if it fired first
+            fired_critical = rand(Categorical((speeds[critical])/sum(speeds[critical])))
+        else
+            fired_critical = -1
         end
 
-        try_t = t + tau_adaptive
-        try_x = x + tlm.nu*fired_reactions
-    
-        if .|((try_x.<0)...)
-            # print("Halving!\n")
-            return t,x,d,f = get_step(tauprime/2, tauprimeprime, t, x, speeds, crit, notcrit) 
-            # i.e. if any x component is negative, half tauprime and go again
+        for j in 1:nr
+            if !critical[j]
+                f[j] = rand(Poisson(d[j]))
+            elseif j == fired_critical
+                f[j] = 1
+            else
+                f[j] = 0
+            end
         end
-
-        return try_t, try_x, distance_travelled, fired_reactions
+        append!(t_traj, t_traj[end]+tau_adaptive) 
+        x[:] += tlm.nu*f
     end
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
-    d_traj=Array{Float64,1}()
-    f_traj=Array{Int64,1}()
-
-    nx, nr = size(tlm.nu)
-    if nc==0
-        posscrit = []
-    else
-        posscrit = filter(j->(minimum(tlm.nu[:,j])<0),1:nr)
+    function backstep!(t_traj, x_traj, x)
+        pop!(t_traj)
+        x = x_traj[end-(length(x)-1):end]
     end
-    notcrit = setdiff(1:nr,posscrit)
+
+    (nx, nr) = size(tlm.nu)
+
+    t_traj::Array{Float64,1} = [0]
+    x_traj::Array{Float64,1} = copy(tlm.x0)
+    x::Array{Float64,1} = copy(tlm.x0)
+
+    d_traj::Array{Float64,1} = zeros(nr)
+    f_traj::Array{Int64,1} = zeros(nr)
+    d = zeros(nr)
+    f = zeros(nr)
     
-    t=0
-    x = tlm.x0
-    append!(t_traj,t)
-    append!(x_traj,x)
-    append!(d_traj,zeros(nr))
-    append!(f_traj,zeros(nr))
+    L::Array{Float64,1} = zeros(nr)
+    speeds::Array{Float64,1} = zeros(nr)
+    diffspeeds::Array{Float64,2} = zeros(nr, nx)
 
-    while t<tlm.T
-        speeds = tlm.propensity(x,tlm.k)
-        crit_j = filter(j->decide_critical(tlm.nu[:,j],x,speeds[j],nc),posscrit)
-        notcrit_j = setdiff(1:nr,crit_j)
+    critnu::Array{Bool,2} = (tlm.nu .< 0)
+    critical::Array{Bool,1} = [minimum(tlm.nu[:,j])<0 for j in 1:nr]
+    posscrit::Array{Bool,1} = [minimum(tlm.nu[:,j])<0 for j in 1:nr]
+    
+    
+    while t_traj[end] < tlm.T
+        propensity!(speeds, x, tlm)
+        decide_critical!(critical, x, speeds, L, critnu, posscrit, nc, tlm)
 
         if epsilon>0
-            diff_speeds = tlm.diff_propensity(x,tlm.k)
-            tauprime = largest_timestep(tlm.nu, speeds, diff_speeds, notcrit_j, epsilon)
+            diff_propensity!(diffspeeds, x, tlm)
+            tauprime = largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
         else
             tauprime = tau
         end
 
-        if isempty(crit_j)
-            tauprimeprime = Inf64
+        if |(critical...)
+            tauprimeprime = rand(Exponential(1/sum(speeds[critical])))
         else
-            tauprimeprime = rand(Exponential(1/sum(speeds[crit_j])))
+            tauprimeprime = Inf64
         end
 
-        t, x, d, f = get_step(tauprime, tauprimeprime, t, x, speeds, crit_j, notcrit_j)
+        do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        while .|((x.<0)...)
+            backstep!(t_traj, x_traj, x)
+            tauprime /= 2
+            do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+        end
 
-        append!(t_traj,t)
         append!(x_traj,x)
         append!(d_traj,d)
         append!(f_traj,f)
