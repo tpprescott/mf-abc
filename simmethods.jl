@@ -59,8 +59,8 @@ function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, a::Arr
     return nothing
 end
 
-function propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, gm::GillespieModel)
-    speeds[:] = gm.propensity(x, gm.k)
+function propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, model)
+    speeds[:] = model.propensity(x, model.k)
     return nothing
 end
 
@@ -235,47 +235,49 @@ struct HybridModel
     end
 end
 
+function reduced_propensity!(speeds::Array{Float64,1}, x::Array{Float64,1}, model::HybridModel)
+    speeds[:] = model.propensity(x, model.k) .* model.stochastic_reactions
+    return nothing
+end
+
+function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Float64,1}, pp_set::Array{Array{Float64,1},1}, speeds::Array{Float64,1}, hm::HybridModel)
+    
+    tau_det, nu_j_det = hm.deterministic_step(t_traj[end], x, hm.k)    
+    a0 = sum(speeds)
+    if a0>0
+        tau_sto = rand(Exponential(1/a0))
+    else
+        tau_sto = Inf64
+    end
+
+    if tau_det <= tau_sto
+        append!(t_traj, t_traj[end]+tau_det)
+        x[:] += nu_j_det
+        d[:] += tau_det*speeds
+    else
+        append!(t_traj, t_traj[end]+tau_sto)
+        j = rand(Categorical(speeds./a0))
+        x[:] += hm.nu[:,j]
+        d[:] += tau_sto*speeds
+        append!(pp_set[j],d[j])
+    end
+end
+
 function hybrid(hm::HybridModel)
 
     (n_x, n_r) = size(hm.nu)
 
-    t_traj=Array{Float64,1}()
-    x_traj=Array{Float64,1}()
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(hm.x0)
+    x::Array{Float64,1} = copy(hm.x0)
     
     pp_set=[Float64[] for i in 1:n_r]
-    d = zeros(n_r)
+    d::Array{Float64,1} = zeros(n_r)
+    speeds::Array{Float64,1} = zeros(n_r)
     
-    t = 0.0
-    x = hm.x0
-    
-    append!(t_traj,t)
-    append!(x_traj,x)
-
-    while t<hm.T
-        
-        tau_det, nu_j_det = hm.deterministic_step(t,x,hm.k)
-        speeds = hm.propensity(x,hm.k) .* hm.stochastic_reactions
-        
-        a0 = sum(speeds)
-        if a0>0
-            tau_sto = rand(Exponential(1/a0))
-        else
-            tau_sto = Inf64
-        end
-
-        if tau_det <= tau_sto
-            t += tau_det
-            x += nu_j_det
-            d += tau_det*speeds
-        else
-            t += tau_sto
-            j = rand(Categorical(speeds./a0))
-            x += hm.nu[:,j]
-            d += tau_sto*speeds
-            append!(pp_set[j],d[j])
-        end
-
-        append!(t_traj,t)
+    while t_traj[end] < hm.T
+        reduced_propensity!(speeds, x, hm)
+        hybrid_step!(t_traj, x, d, pp_set, speeds, hm)
         append!(x_traj,x)
     end
 
@@ -298,44 +300,43 @@ function bridge_PP(d::Array{Float64,2},f::Array{Int64,2})
     return pp_fired
 end
 
+function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, next_event_d::Array{Float64, 1}, d::Array{Float64,1}, pps::Array{Array{Float64,1},1}, a::Array{Float64,1}, mdl)
+    tau, j = findmin((next_event_d - d)./a)
+    d[:] += a*tau
+    if isempty(pps[j])
+        next_event_d[j] += randexp()
+    else
+        next_event_d[j] = popfirst!(pps[j])
+    end
+    if isfinite(tau)
+        append!(t_traj, t_traj[end]+tau)
+        x[:] += mdl.nu[:,j]
+    else
+        append!(t_traj, mdl.T)
+    end
+end
+
 function map_pp_to_trajectory(mdl::Union{TauLeapModel,HybridModel}, pp_set::Array{Array{Float64,1},1})
 
-    t_traj = Array{Float64,1}()
-    x_traj = Array{Float64,1}()
-
-    t=0
-    x = mdl.x0
+    t_traj::Array{Float64,1} = [0.0]
+    x_traj::Array{Float64,1} = copy(mdl.x0)
+    x = copy(mdl.x0)
+    pp = deepcopy(pp_set)
     
-    append!(t_traj,t)
-    append!(x_traj,x)
-
     (nx,nr) = size(mdl.nu)
     d = zeros(nr)
+    speed = zeros(nr)
+
     next_event_d = randexp(nr)
     for j in 1:nr
-        if ~isempty(pp_set[j])
-            next_event_d[j] = popfirst!(pp_set[j])
+        if ~isempty(pp[j])
+            next_event_d[j] = popfirst!(pp[j])
         end
     end
 
-    while t<mdl.T
-        speed = mdl.propensity(x,mdl.k)
-        (tau,j) = findmin((next_event_d - d)./speed)
-        d += speed*tau
-        if isempty(pp_set[j])
-            next_event_d[j] += randexp()
-        else
-            next_event_d[j] = popfirst!(pp_set[j])
-        end
-        
-        if isfinite(tau)
-            t += tau
-            x += mdl.nu[:,j]
-        else
-            t = mdl.T
-        end
-
-        append!(t_traj,t)
+    while t_traj[end] < mdl.T
+        propensity!(speed, x, mdl)
+        gillespie_update!(t_traj, x, next_event_d, d, pp, speed, mdl)
         append!(x_traj,x)
     end
 
@@ -347,9 +348,9 @@ end
 ######### Apply coupling methods
 
 function complete_tauleap(tlm::TauLeapModel, d_traj::Array{Float64,2}, f_traj::Array{Int64,2})
-    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj,f_traj))
+    t_traj, x_traj = map_pp_to_trajectory(tlm,bridge_PP(d_traj, f_traj))
 end
 
 function complete_hybrid(hm::HybridModel, pp_set::Array{Array{Float64,1},1})
-    t_traj, x_traj = map_pp_to_trajectory(hm,pp_set)
+    t_traj, x_traj = map_pp_to_trajectory(hm, pp_set)
 end
