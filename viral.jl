@@ -12,17 +12,24 @@ function viral_model_generator()
 
     nu = Float64.([0 1 0 -1 0 0 ; 1 -1 0 0 0 -1 ; 0 0 1 0 -1 -1; 0 0 0 0 0 1])
 
-    function propensity(x::Array{Float64,1}, k::NTuple{6,Float64})
-        return k.*[x[1], x[2], x[1], x[1], x[3], x[2]*x[3]]
+    function propensity!(v::Array{Float64,1}, x::Array{Float64,1}, k::NTuple{6,Float64})
+        v[:] = k.*[x[1], x[2], x[1], x[1], x[3], x[2]*x[3]]
+        return nothing
     end
 
     x0 = [1.0, 0.0, 0.0, 0.0]
     ko = (1.0, 0.025, 100.0, 0.25, 1.9985, 7.5e-5)
     T = 200.0
 
-    viral = ModelGenerator(nu, propensity, x0, ko, T)
+    viral = ModelGenerator(nu, propensity!, x0, ko, T)
 
     stochastic_reactions = [true,true,false,true,false,true]
+
+    function reduced_propensity!(v::Array{Float64,1}, x::Array{Float64,1}, k::NTuple{6,Float64})
+        propensity!(v, x, k)
+        v[:] .*= stochastic_reactions 
+        return nothing
+    end
 
     function deterministic_step(t,x,k)
         err = (k[3]/k[5])*x[1] - x[3]
@@ -35,7 +42,7 @@ function viral_model_generator()
         return tau, [0, 0, sign(err), 0]
     end
 
-    viral.stochastic_reactions = stochastic_reactions
+    viral.reduced_propensity! = reduced_propensity!
     viral.deterministic_step = deterministic_step
     return viral
 
