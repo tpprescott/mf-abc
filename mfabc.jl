@@ -1,38 +1,36 @@
+export MFABC, Particle, Cloud
+export runpair, get_benchmark
+
+##### Everything below assumes exactly two fidelities: 
+# Future work will adapt methodology to a true multifidelity approach.
+
 struct MFABC
     parameter_sampler::Function # Parameter sampler
-    lofi::Function              # Map parameter to draw (lofi model) in summary statistic space
-    hifi::Function              # Map parameter to draw (hifi model) in summary statistic space (accepts output from lofi for coupling)
-    distance::Function          # Distance in summary statistic space from synthetic data
+    lofi::Function              # Map parameter to distance from observed data (low fidelity model) and coupling output
+    hifi::Function              # Map parameter and coupling input to distance from observed data (high fidelity model)
 end
 
-function runpair(mfabc::MFABC, i::Int64=1; timed_flag::Bool=true)
-    
-    k = mfabc.parameter_sampler()
+mutable struct Particle
+    k::Parameters                # Record the parameter values
+    sim_flag::Tuple{Bool,Bool}   # Record whether lofi and hifi simulations
+    dist::Tuple{Float64,Float64} # Record the distances (if simulated)
+    cost::Tuple{Float64,Float64} # Record the costs (if simulated)
+end
+Cloud = Array{Particle, 1}
 
-    if timed_flag
-    # Simulate low-fidelity and complete high-fidelity
-        (yc,pass),ctilde = @timed mfabc.lofi(k)
-        (yf),cc = @timed mfabc.hifi(k,pass)
-    else
-        yc, pass = mfabc.lofi(k)
-        yf = mfabc.hifi(k,pass)
-    end
+function runpair(mfabc::MFABC, i::Int64=1)
+   
+    k::Parameters = mfabc.parameter_sampler()
+    (d_lo,pass),c_lo = @timed mfabc.lofi(k)
+    (d_hi),c_hi = @timed mfabc.hifi(k,pass)
     
-    # Find out distances from data
-    dc = mfabc.distance(yc)
-    df = mfabc.distance(yf)
-
-    if timed_flag
-        return (k..., dc, df, ctilde, cc)
-    else
-        return (k..., dc, df)
-    end
+    return Particle(k, (true,true), (d_lo, d_hi), (c_lo, c_hi))
 end
 
 using Distributed
 using DelimitedFiles
-function get_benchmark(mfabc::MFABC, N::Int64=10, outfile::String="./trial_output.txt")
+function get_benchmark(mfabc::MFABC, N::Int64=10, outfile::String="./trial_output.txt")::Cloud
     output = pmap(i->runpair(mfabc,i), 1:N)
-    writedlm(outfile,output)
+#    writedlm(outfile,output)
     return output
 end

@@ -1,51 +1,36 @@
-using LinearAlgebra
-using Dierckx
+export Simulatable, Parameters, GillespieModel, TauLeapModel, HybridModel
+export Times, States, Coupling, Coarse_PP, PP
+export simulate, complete
+
 using Random
 using Distributions
 using Printf
 
-mutable struct ModelGenerator
-    # Required fields
-    nu::Matrix{Float64}             # Stoichiometric matrix
-    propensity!::Function           # Propensity function
-    x0::Array{Float64,1}            # Initial conditions
-    k_nominal                       # Nominal parameters - type has to match input type of propensity
-    T::Float64                      # Simulation time
+abstract type Simulatable end
+Parameters = Tuple{Vararg{Float64}}
 
-    # Optional fields
-    diff_propensity!::Function      # Differentiated propensity function (for adaptivity of tau-leaping)
-    reduced_propensity!::Function   # Propensity of stochastic reactions only (for hybrid)
-    deterministic_step::Function    # The deterministic reaction wait time and result
+######## Output types
+Times = Array{Float64,1}
+States = Array{Float64,2}
 
-    function ModelGenerator(nu::Matrix{Float64}, propensity!::Function, x0::Array{Float64,1}, k_nominal, T::Float64)
-        mg = new()
-        mg.nu = nu
-        mg.propensity! = propensity!
-        mg.x0 = x0
-        mg.k_nominal = k_nominal
-        mg.T = T
-        return mg
-    end 
+abstract type Coupling end
 
+struct Coarse_PP <: Coupling
+    distance_intervals::Array{Float64,2}
+    interval_firings::Array{Int64,2}
 end
-
+struct PP <: Coupling
+    firing_distances::Array{Array{Float64,1},1}
+end
 
 ######## Direct simulation
 
-struct GillespieModel
+struct GillespieModel <: Simulatable
     nu::Matrix{Float64}             # Stoichiometric matrix
-    propensity!::Function            # Propensity function
+    propensity!::Function           # Propensity function
     x0::Array{Float64,1}            # Initial conditions
-    k                               # Parameters to simulate - type has to match input type of par_prior
+    k_nominal::Parameters           # Parameters to simulate - type has to match input type of par_prior
     T::Float64                      # Simulation time
-    
-    GillespieModel(nu,propensity!,x0,k,T) = new(nu,propensity!,x0,k,T)
-    function GillespieModel(mg::ModelGenerator) 
-        return new(mg.nu, mg.propensity!, mg.x0, mg.k_nominal, mg.T)
-    end
-    function GillespieModel(mg::ModelGenerator, parameters)
-        return new(mg.nu, mg.propensity!, mg.x0, parameters, mg.T)
-    end
 end
 
 function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, a::Array{Float64}, gm::GillespieModel)
@@ -59,7 +44,7 @@ function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, a::Arr
     return nothing
 end
 
-function gillespieDM(gm::GillespieModel)::Tuple{Array{Float64,1}, Array{Float64,2}}
+function simulate(gm::GillespieModel, k::Parameters)::Tuple{Times, States}
 
     (nx,nr) = size(gm.nu)
     
@@ -69,7 +54,7 @@ function gillespieDM(gm::GillespieModel)::Tuple{Array{Float64,1}, Array{Float64,
     speeds::Array{Float64,1} = zeros(nr)
 
     while t_traj[end] < gm.T
-        gm.propensity!(speeds, x, gm.k)
+        gm.propensity!(speeds, x, k)
         gillespie_update!(t_traj, x, speeds, gm)
         append!(x_traj,x)
     end
@@ -86,40 +71,35 @@ end
 # The parameter nc defines reactions as critical if nc firings would send molecule 
 # counts negative: then the reactions are not allowed to proceed according to tau leap.
 
-struct TauLeapModel
-    nu::Matrix{Float64}             # Stoichiometric matrix
-    propensity!::Function            # Propensity function
-    diff_propensity!::Function       # Differentiated propensity function
-    x0::Array{Float64,1}            # Initial conditions
-    k                               # Parameters to simulate - type has to match input type of propensity
-    T::Float64                      # Simulation time
-    
-    TauLeapModel(nu,propensity!,diff_propensity!,x0,k,T,summ_stat) = new(nu,propensity!,diff_propensity!,x0,k,T)
-    function TauLeapModel(mg::ModelGenerator)
-        return new(mg.nu, mg.propensity!, mg.diff_propensity!, mg.x0, mg.k_nominal, mg.T)
-    end
-    function TauLeapModel(mg::ModelGenerator, parameters)
-        return new(mg.nu, mg.propensity!, mg.diff_propensity!, mg.x0, parameters, mg.T)
-    end
+struct TauLeapModel <: Simulatable
+    nu::Matrix{Float64}         # Stoichiometric matrix
+    propensity!::Function       # Propensity function
+    x0::Array{Float64,1}        # Initial conditions
+    k_nominal::Parameters       # Parameters to simulate - type has to match input type of propensity
+    T::Float64                  # Simulation time
+    diff_propensity!::Function  # Differentiated propensity function
+    tau::Real                   # Base non-adaptive tau-leap (if epsilon is zero)
+    nc::Real                    # How many firings away from going negative makes a reaction critical
+    epsilon::Real               # Error parameter for adaptive tau leaping
 end
 
-function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon::Float64=0.0)
+function simulate(tlm::TauLeapModel, k::Parameters)::Tuple{Times, States, Coupling}
     
-    function decide_critical!(critical::Array{Bool,1}, x::Array{Float64,1}, speeds::Array{Float64,1}, L::Array{Float64,1}, critnu::Array{Bool,2}, posscrit::Array{Bool,1}, nc::Float64, tlm::TauLeapModel)
+    function decide_critical!(critical::Array{Bool,1}, x::Array{Float64,1}, speeds::Array{Float64,1}, L::Array{Float64,1}, critnu::Array{Bool,2}, posscrit::Array{Bool,1}, tlm::TauLeapModel)
         for j in 1:length(critical)
             if posscrit[j]
                 if speeds[j]==0
                     critical[j] = false
                 else
                     L[j] = minimum(ceil.(x[critnu[:,j]]./abs.(tlm.nu[critnu[:,j],j])))
-                    critical[j] = (L[j] <= nc)
+                    critical[j] = (L[j] <= tlm.nc)
                 end
             end
         end
         return nothing
     end
 
-    function largest_timestep(speeds::Array{Float64,1}, diffspeeds::Array{Float64,2}, critical::Array{Bool,1}, epsilon::Float64, tlm::TauLeapModel)
+    function largest_timestep(speeds::Array{Float64,1}, diffspeeds::Array{Float64,2}, critical::Array{Bool,1}, tlm::TauLeapModel)
         # largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
         
         nr = size(tlm.nu,2)
@@ -130,13 +110,13 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
             F = diffspeeds[.!critical, :] * tlm.nu[:, .!critical]
             mu = F*speeds[.!critical]
             sigma2 = (F.^2)*speeds[.!critical]
-            v1 = epsilon*sum(speeds)./abs.(mu)
-            v2 = ((epsilon*sum(speeds))^2)./sigma2
+            v1 = tlm.epsilon*sum(speeds)./abs.(mu)
+            v2 = ((tlm.epsilon*sum(speeds))^2)./sigma2
             return minimum([v1;v2])
         end
     end
 
-    function do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical, tlm)
+    function do_tau_leap!(t_traj, x, d, f::Array{Int64,1}, tauprime, tauprimeprime, speeds, critical, tlm)
         # do_tau_leap!(t_traj, x, d, f, tauprime, tauprimeprime, speeds, critical)
  
         nr = length(speeds)
@@ -176,8 +156,8 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
 
     d_traj::Array{Float64,1} = zeros(nr)
     f_traj::Array{Int64,1} = zeros(nr)
-    d = zeros(nr)
-    f = zeros(nr)
+    d::Array{Float64,1} = zeros(nr)
+    f::Array{Int64,1} = zeros(nr)
     
     L::Array{Float64,1} = zeros(nr)
     speeds::Array{Float64,1} = zeros(nr)
@@ -189,14 +169,14 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
     
     
     while t_traj[end] < tlm.T
-        tlm.propensity!(speeds, x, tlm.k)
-        decide_critical!(critical, x, speeds, L, critnu, posscrit, nc, tlm)
+        tlm.propensity!(speeds, x, k)
+        decide_critical!(critical, x, speeds, L, critnu, posscrit, tlm)
 
-        if epsilon>0
-            tlm.diff_propensity!(diffspeeds, x, tlm.k)
-            tauprime = largest_timestep(speeds, diffspeeds, critical, epsilon, tlm)
+        if tlm.epsilon>0
+            tlm.diff_propensity!(diffspeeds, x, k)
+            tauprime = largest_timestep(speeds, diffspeeds, critical, tlm)
         else
-            tauprime = tau
+            tauprime = tlm.tau
         end
 
         if |(critical...)
@@ -218,34 +198,26 @@ function tauleap(tlm::TauLeapModel; tau::Float64=0.01, nc::Float64=0.0, epsilon:
 
     end
     nt = length(t_traj)
-    return t_traj, reshape(x_traj,(nx, nt)), reshape(d_traj,(nr, nt)), reshape(f_traj,(nr, nt))
+    return t_traj, reshape(x_traj,(nx, nt)), Coarse_PP(reshape(d_traj,(nr, nt)), reshape(f_traj,(nr, nt)))
 
 end
 
 ######## Hybrid deterministic/continuous simulation
 # Produces trajectory and Poisson process of the stochastic firings
 
-struct HybridModel
+struct HybridModel <: Simulatable
     nu::Matrix{Float64}             # Stoichiometric matrix
     propensity!::Function           # Propensity function
     x0::Array{Float64,1}            # Initial conditions
-    k                               # Parameters to simulate - type has to match input type of par_prior
+    k_nominal::Parameters           # Parameters to simulate - type has to match input type of par_prior
     T::Float64                      # Simulation time
     reduced_propensity!::Function   # Reduced propensity function (only return speeds of stochastic reactions)
     deterministic_step::Function    # The deterministic reaction wait time and result
-    
-    HybridModel(nu,propensity!,x0,k,T,reduced_propensity!,determinstic_step) = new(nu,propensity!,x0,k,T,reduced_propensity!,deterministic_step)
-    function HybridModel(mg::ModelGenerator) 
-        return new(mg.nu, mg.propensity!, mg.x0, mg.k_nominal, mg.T, mg.reduced_propensity!, mg.deterministic_step)
-    end
-    function HybridModel(mg::ModelGenerator, parameters)
-        return new(mg.nu, mg.propensity!, mg.x0, parameters, mg.T, mg.reduced_propensity!, mg.deterministic_step)
-    end
 end
 
-function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Float64,1}, pp_set::Array{Array{Float64,1},1}, speeds::Array{Float64,1}, hm::HybridModel)
+function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Float64,1}, pp_set::Array{Array{Float64,1},1}, speeds::Array{Float64,1}, hm::HybridModel, k::Parameters)
     
-    tau_det, nu_j_det = hm.deterministic_step(t_traj[end], x, hm.k)    
+    tau_det, nu_j_det = hm.deterministic_step(t_traj[end], x, k)    
     a0 = sum(speeds)
     if a0>0
         tau_sto = rand(Exponential(1/a0))
@@ -266,7 +238,7 @@ function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Fl
     end
 end
 
-function hybrid(hm::HybridModel)
+function simulate(hm::HybridModel, k::Parameters)::Tuple{Times, States, Coupling}
 
     (n_x, n_r) = size(hm.nu)
 
@@ -279,31 +251,30 @@ function hybrid(hm::HybridModel)
     speeds::Array{Float64,1} = zeros(n_r)
     
     while t_traj[end] < hm.T
-        hm.reduced_propensity!(speeds, x, hm.k)
-        hybrid_step!(t_traj, x, d, pp_set, speeds, hm)
+        hm.reduced_propensity!(speeds, x, k)
+        hybrid_step!(t_traj, x, d, pp_set, speeds, hm, k)
         append!(x_traj,x)
     end
 
     n_t = length(t_traj)
-    return t_traj, reshape(x_traj,(n_x, n_t)), pp_set
+    return t_traj, reshape(x_traj,(n_x, n_t)), PP(pp_set)
 end
-
 
 ######## Coupling methods, based on
 # (A) making a coarse-grained Poisson process fine-grained
 # (B) mapping a known Poisson process to an exact trajectory (filling in gaps where needed)
 
-function bridge_PP(d::Array{Float64,2},f::Array{Int64,2})
-    nr = size(d,1)
-    firings = d[:,2:end].*rand.(f[:,2:end])
-    D = cumsum(d,dims=2)
+function bridge_PP(c::Coarse_PP)::PP
+    nr = size(c.distance_intervals,1)
+    firings = c.distance_intervals[:,2:end].*rand.(c.interval_firings[:,2:end])
+    D = cumsum(c.distance_intervals,dims=2)
     pp_split = broadcast((a,b)->a.+b, D[:,1:end-1], firings)
     sort!.(pp_split)
     pp_fired = [vcat(pp_split[j,:]...) for j = 1:nr]
-    return pp_fired
+    return PP(pp_fired)
 end
 
-function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, next_event_d::Array{Float64, 1}, d::Array{Float64,1}, pps::Array{Array{Float64,1},1}, a::Array{Float64,1}, mdl)
+function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, next_event_d::Array{Float64, 1}, d::Array{Float64,1}, pps::Array{Array{Float64,1},1}, a::Array{Float64,1}, mdl::Simulatable)
     tau, j = findmin((next_event_d - d)./a)
     d[:] += a*tau
     if isempty(pps[j])
@@ -319,12 +290,11 @@ function gillespie_update!(t_traj::Array{Float64,1}, x::Array{Float64,1}, next_e
     end
 end
 
-function map_pp_to_trajectory(mdl::Union{TauLeapModel,HybridModel}, pp_set::Array{Array{Float64,1},1})
+function map_pp_to_trajectory(mdl::Simulatable, k::Parameters, pp::PP)::Tuple{Times, States}
 
     t_traj::Array{Float64,1} = [0.0]
     x_traj::Array{Float64,1} = copy(mdl.x0)
     x = copy(mdl.x0)
-    pp = deepcopy(pp_set)
     
     (nx,nr) = size(mdl.nu)
     d = zeros(nr)
@@ -332,14 +302,14 @@ function map_pp_to_trajectory(mdl::Union{TauLeapModel,HybridModel}, pp_set::Arra
 
     next_event_d = randexp(nr)
     for j in 1:nr
-        if ~isempty(pp[j])
-            next_event_d[j] = popfirst!(pp[j])
+        if ~isempty(pp.firing_distances[j])
+            next_event_d[j] = popfirst!(pp.firing_distances[j])
         end
     end
 
     while t_traj[end] < mdl.T
-        mdl.propensity!(speed, x, mdl.k)
-        gillespie_update!(t_traj, x, next_event_d, d, pp, speed, mdl)
+        mdl.propensity!(speed, x, k)
+        gillespie_update!(t_traj, x, next_event_d, d, pp.firing_distances, speed, mdl)
         append!(x_traj,x)
     end
 
@@ -350,10 +320,33 @@ end
 
 ######### Apply coupling methods
 
-function complete_tauleap(tlm::TauLeapModel, d_traj::Array{Float64,2}, f_traj::Array{Int64,2})
-    t_traj, x_traj = map_pp_to_trajectory(tlm, bridge_PP(d_traj, f_traj))
+function complete(tlm::TauLeapModel, k::Parameters, c_pp::Coarse_PP)::Tuple{Times, States}
+    t_traj, x_traj = map_pp_to_trajectory(tlm, k, bridge_PP(c_pp))
+end
+function complete(hm::HybridModel, k::Parameters, pp::PP)::Tuple{Times, States}
+    t_traj, x_traj = map_pp_to_trajectory(hm, k, pp)
 end
 
-function complete_hybrid(hm::HybridModel, pp_set::Array{Array{Float64,1},1})
-    t_traj, x_traj = map_pp_to_trajectory(hm, pp_set)
+######### Define nominal and population simulations
+
+function simulate(m::Simulatable)
+    return simulate(m, m.k_nominal)
+end
+function simulate(m::Simulatable, k::Parameters, N::Int64)
+    outputs = collect(zip([simulate(m, k) for i in 1:N]...))
+    return collect.(outputs)
+end
+function simulate(m::Simulatable, N::Int64)
+    return simulate(m, m.k_nominal, N)
+end
+
+function complete(m::Simulatable, c::Coupling)
+    return complete(m, m.k_nominal, c)
+end
+function complete(m::Simulatable, k::Parameters, coupling_set::Array{<:Coupling,1})
+    outputs = collect(zip([complete(m, k, coupling) for coupling in coupling_set]...))
+    return collect.(outputs)
+end
+function complete(m::Simulatable, coupling_set::Array{<:Coupling,1})
+    return complete(m, m.k_nominal, coupling_set)
 end
