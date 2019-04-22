@@ -1,6 +1,6 @@
 module Viral
 
-using MultiFidelityABC
+using ..MultiFidelityABC
 using Random
 using LinearAlgebra
 

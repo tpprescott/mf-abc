@@ -30,7 +30,11 @@ end
 using Distributed
 using DelimitedFiles
 function get_benchmark(mfabc::MFABC, N::Int64=10, outfile::String="./trial_output.txt")::Cloud
-    output = pmap(i->runpair(mfabc,i), 1:N)
-#    writedlm(outfile,output)
+    if nworkers()>1
+        output = pmap(i->runpair(mfabc,i), 1:N)
+    else
+        output = map(i->runpair(mfabc,i), 1:N)
+    end
+    #    writedlm(outfile,output)
     return output
 end

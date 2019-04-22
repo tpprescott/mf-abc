@@ -1,6 +1,6 @@
 module Repressilator
 
-using MultiFidelityABC
+using ..MultiFidelityABC
 using LinearAlgebra
 using Dierckx
 using Random
