@@ -2,6 +2,7 @@ module Viral
 
 using ..MultiFidelityABC
 using Random
+using StatsBase
 using LinearAlgebra
 
 # Viral model specification contains:
@@ -51,24 +52,37 @@ Random.seed!(123)
 t_pop, x_pop = simulate(gm, pop_size) # Simulate the nominal model with a fixed seed
 Random.seed!()
 
-function summary_statistics(t_pop::Array{Array{Float64,1},1}, x_pop::Array{Array{Float64,2},1})
-    return sort([x[end,end] for x in x_pop])
+function summary_statistics(t_pop::Array{Times,1}, x_pop::Array{States,1})
+    
+    infected_threshold = 3
+    derivative_horizon = 30.0
+
+    infected = [x[4,end]>0 for x in x_pop]
+    viral_count = [x[4,end] for (x,inf_flag) in zip(x_pop, infected) if inf_flag]    
+    viral_output = [(x[4,end] - x[4,findlast(t.<T-derivative_horizon)])/derivative_horizon for (t, x, inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
+    infection_time =  [t[findfirst(x[4,:].>infected_threshold)] for (t,x,inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
+
+    if .|(infected...)
+        return mean(infected), mean(viral_count), mean(viral_output), mean(infection_time)
+    else
+        return 0.0, Inf64, Inf64, Inf64
+    end
 end
 yo = summary_statistics(t_pop, x_pop)
 
-function distance(y::Array{Float64,1})
-    return norm(y-yo)/T
+function distance(pc_infected::Float64, viral_count::Float64, viral_output::Float64, infection_time::Float64)
+    return sqrt((pc_infected - yo[1])^2 + ((viral_count/yo[2])-1)^2 + ((viral_output/yo[3])-1)^2 + ((infection_time/yo[4])-1)^2)
 end
 
 function lofi(k::Parameters)
     t_pop, x_pop, pp_pop = simulate(hm, k, pop_size)
-    return distance(summary_statistics(t_pop, x_pop)), pp_pop
+    return distance(summary_statistics(t_pop, x_pop)...), pp_pop
 end
 
 # The following hifi *couples* low fidelity and high fidelity simulations:
 function hifi(k::Parameters, coupling_input::Array{PP,1})
     t_pop, x_pop = complete(hm, k, coupling_input)
-    return distance(summary_statistics(t_pop, x_pop))
+    return distance(summary_statistics(t_pop, x_pop)...)
 end
 
 # # This hifi version would produce independent (uncoupled) high fidelity simulations:
