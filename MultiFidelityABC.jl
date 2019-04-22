@@ -4,3 +4,4 @@ include("mfabc.jl")
 end
 include("Viral.jl")
 include("Repressilator.jl")
+using .MultiFidelityABC
