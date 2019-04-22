@@ -83,4 +83,6 @@ function prior()::Parameters
     return k1, k_nominal[2], k_nominal[3], k_nominal[4], k_nominal[5], k_nominal[6]
 end
 
+mf_prob = MFABC(prior, lofi, hifi)
+
 end

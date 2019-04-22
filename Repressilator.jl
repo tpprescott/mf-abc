@@ -79,4 +79,6 @@ function prior()
     return k_nominal[1], k2, k_nominal[3], k_nominal[4], k5
 end
 
+mf_prob = MFABC(prior, lofi, hifi)
+
 end
