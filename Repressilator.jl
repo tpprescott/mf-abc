@@ -81,4 +81,9 @@ end
 
 mf_prob = MFABC(prior, lofi, hifi)
 
+# Parameter functions we're interested in estimating
+F = [k->Float64(1.9 < k[2] < 2.1),
+     k->Float64(1.2 < k[2] < 1.4),
+     k->k[2]]
+
 end

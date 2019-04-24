@@ -1,5 +1,5 @@
 export MFABC, Particle, Cloud, BenchmarkParticle, BenchmarkCloud, MFABCParticle, MFABCCloud
-export get_eta
+export get_eta, phi
 
 ##### Everything below assumes exactly two fidelities: 
 # Future work will adapt methodology to a true multifidelity approach.
