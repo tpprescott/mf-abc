@@ -202,3 +202,13 @@ function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple
         return map(i->MFABCParticle(mfabc, epsilons, etas, i), 1:N)
     end
 end
+
+function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::Cloud{MFABCParticle}
+    running_cost = 0.0
+    cloud = Cloud{MFABCParticle}()
+    while running_cost < budget
+        append!(cloud, [MFABCParticle(mfabc, epsilons, etas)])
+        running_cost += cloud[end].c
+    end
+    return cloud        
+end

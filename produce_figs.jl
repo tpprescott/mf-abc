@@ -2,8 +2,8 @@ using DelimitedFiles
 using StatsBase, Statistics
 using Random
 
-export estimate_mu, ESS, estimator_variance
-export compare_efficiencies, view_distances, observed_variances
+export estimate_mu, ESS
+export compare_efficiencies, view_distances, observed_variances, efficiency_histogram
 
 ######### Helper functions
 
@@ -35,10 +35,6 @@ end
 function estimate_mu(s::Cloud{MFABCParticle}, parameterFun::Function, budget::Float64)
     used_idx = (cumsum([p.c for p in s]).<budget)
     return estimate_mu([p.w for p in s[used_idx]], [p.k for p in s[used_idx]], parameterFun)
-end
-
-function estimator_variance(sset::Array{Cloud{MFABCParticle}, 1}, parameterFun::Function)
-    return var(map(s->estimate_mu(s, parameterFun), sset))
 end
 
 ####################################
@@ -199,27 +195,59 @@ function view_distances(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Fl
 
 end
 
-function observed_variances(bm::Cloud{BenchmarkParticle}, sims_set, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budget::Float64=Inf64)
-    method_list = ["abc", "ed", "er", "mf"]
-    vartab = Array{Float64,2}(undef,length(F),length(method_list))
-    phitab = Array{Float64,2}(undef,length(F),length(method_list))
-    etatab = Array{Tuple{Float64,Float64},2}(undef,length(F),length(method_list))
+function observed_variances(bm::Cloud{BenchmarkParticle}, sims_set, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budgets::Array{Float64,1}=[Inf64])
+    method_list = ["abc", "er", "ed", "mf"]
+    vartab = Array{Array{Float64,1},2}(undef,length(F),length(method_list)+1)
+    phitab = Array{Float64,2}(undef,length(F),length(method_list)+1)
+    etatab = Array{Tuple{Float64,Float64},2}(undef,length(F),length(method_list)+1)
 
-    cloud_focus = MFABCCloud(bm, epsilons, (1.0,1.0))
+    cloud_focus = MFABCCloud(collect(first(sims_set)), epsilons, (1.0,1.0))
+    ess_eta = get_eta(bm, epsilons)[1]
 
     Random.seed!(1457)
-    mu = zeros(length(sims_set))
+    mu = zeros(length(sims_set),length(budgets))
     for (i,fun) in enumerate(F)
         for (j,mth) in enumerate(method_list)
+            vartab[i,j] = zeros(length(budgets))
             etas, phitab[i,j] = get_eta(bm, epsilons, fun, method=mth)
             for (k,sims) in enumerate(sims_set)
                 MFABCCloud!(cloud_focus, sims, epsilons, etas)
-                mu[k] = estimate_mu(cloud_focus, fun, budget)
+                for (l,b) in enumerate(budgets)
+                    mu[k,l] = estimate_mu(cloud_focus, fun, b)
+                end
             end
-            vartab[i,j] = var(mu)
+            vartab[i,j] = vec(var(mu, dims=1))
             etatab[i,j] = etas
+        end
+
+        # Additional method: repeat procedure for the eta used to maximise ESS (i.e. independently of F)
+        phitab[i,end] = phi(ess_eta, bm, epsilons, fun)
+        etatab[i,end] = ess_eta
+        vartab[i,end] = zeros(length(budgets))
+        for (k,sims) in enumerate(sims_set)
+            MFABCCloud!(cloud_focus, sims, epsilons, ess_eta)
+            for (l,b) in enumerate(budgets)
+                mu[k,l] = estimate_mu(cloud_focus, fun, b)
+            end
+            vartab[i,end] = vec(var(mu,dims=1))
         end
     end
     Random.seed!()
     return vartab, phitab, etatab
+end
+
+function efficiency_histogram(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons; method::String="mf")
+    etas = get_eta(bm, epsilons, method=method)[1]
+    efficiencies = vec(get_efficiencies(bm, sim_sets, epsilons, [etas]))
+
+    title_dictionary = Dict("mf"=>"Early Accept/Reject", "ed"=>"Early Decision", "er"=>"Early Rejection")
+    fig = plot(xlabel="Effective samples per second",
+    xtickfontsize=10,
+    yticks=[],
+    xgrid=false,
+    legend=:none,
+    title=title_dictionary[method],
+    titlefontsize=12)
+    histogram!(efficiencies)
+    vline!([mean(efficiencies)], color=[:red], label="", linewidth=3.0)
 end
