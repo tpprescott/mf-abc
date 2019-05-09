@@ -112,34 +112,35 @@ function sample_properties(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Real,Rea
 
 end
 
-function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64})
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s, epsilons)
+function phi(eta, p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64)
     return (p_tp - p_fp + (p_fp/eta[1]) + (p_fn/eta[2])) * (ct + c_p*eta[1] + c_n*eta[2])
 end
-function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64})
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s, epsilons)
-    storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
-    storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
+function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64})
+    return phi(eta, sample_properties(s, epsilons)...)
 end
 function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s,epsilons, parameterFun)
-    return (p_tp - p_fp + (p_fp/eta[1]) + (p_fn/eta[2])) * (ct + c_p*eta[1] + c_n*eta[2])
-end
-function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s, epsilons, parameterFun)
-    storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
-    storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
+    return phi(eta, sample_properties(s, epsilons, parameterFun)...)
 end
 function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s,epsilons,cf)
-    return (p_tp - p_fp + (p_fp/eta[1]) + (p_fn/eta[2])) * (ct + c_p*eta[1] + c_n*eta[2])
+    return phi(eta, sample_properties(s, epsilons, cf)...)
 end
-function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s,epsilons,cf)
+
+
+### The following version of get_eta uses optimisation (requiring the derivative of phi too)
+# No longer called
+function dphi!(storage, eta, p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64)
     storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
     storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
 end
-
+function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64})
+    dphi!(storage, eta, sample_properties(s, epsilons)...)
+end
+function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
+    dphi!(storage,eta, sample_properties(s, epsilons, parameterFun)...)
+end
+function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
+    dphi!(storage,eta, sample_properties(s, epsilons, cf)...)
+end
 using Optim
 function get_eta(f::Function, g!::Function; method::String="mf")
     if method=="mf"
@@ -163,14 +164,50 @@ function get_eta(f::Function, g!::Function; method::String="mf")
         return eta=(1.0,1.0)
     end
 end
+
+
+#### The rest of the get_eta are the ones used
+function get_eta(p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64; method::String="mf")
+    Rp = p_fp/(c_p/ct)
+    Rn = p_fn/(c_n/ct)
+    R0 = p_tp - p_fp
+    if R0<=0
+        return (1.0,1.0)
+    end
+
+    eta_1 = sqrt(Rp/R0)
+    eta_2 = sqrt(Rn/R0)
+
+    eta_1_bar = minimum([1.0, eta_1 / sqrt((1+p_fn/R0)/(1+c_n/ct))])
+    eta_2_bar = minimum([1.0, eta_2 / sqrt((1+p_fp/R0)/(1+c_p/ct))])
+
+    if method=="mf"
+        if (eta_1<=1.0)&(eta_2<=1.0)
+            return (eta_1,eta_2)
+        else
+            phi_1 = phi((eta_1_bar, 1.0), p_tp, p_fp, p_fn, ct, c_p, c_n)
+            phi_2 = phi((1.0, eta_2_bar), p_tp, p_fp, p_fn, ct, c_p, c_n)
+            if phi_2 < phi_1
+                return (1.0, eta_2_bar)
+            else
+                return (eta_1_bar, 1.0)
+            end
+        end
+    elseif method=="er"
+        return (1.0, eta_2_bar)
+    elseif method=="ed"
+        eta = sqrt((ct*(p_fp+p_fn))/(R0*(c_p+c_n)))
+        return (eta, eta)
+    else
+        return (1.0, 1.0)
+    end
+end
 function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}; method::String="mf")
     # Keyword "method" can be chosen from "mf" (multifidelity), "er" (early rejection), "ed" (early decision)
     # Any other keyword will give the ABC approach with no early rejection or acceptance at all.
     
     f(x) = phi(x,s,epsilons)
-    g!(st,x) = dphi!(st,x,s,epsilons)
-
-    eta = get_eta(f, g!, method=method)
+    eta = get_eta(sample_properties(s,epsilons)..., method=method)
     return eta, f(eta)
 end
 function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, parameterFun::Function; method::String="mf")
@@ -178,46 +215,13 @@ function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, 
     # Any other keyword will give the ABC approach with no early rejection or acceptance at all.
     
     f(x) = phi(x,s,epsilons,parameterFun)
-    g!(st,x) = dphi!(st,x,s,epsilons,parameterFun)
-
-    eta = get_eta(f, g!, method=method)
+    eta = get_eta(sample_properties(s,epsilons,parameterFun)..., method=method)
     return eta, f(eta)
 end
 function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1}; method::String="mf")
     f(x) = phi(x,s,epsilons,cf)
-    g!(st,x) = dphi!(st,x,s,epsilons,cf)
-
-    eta = get_eta(f, g!, method=method)
+    eta = get_eta(sample_properties(s,epsilons,cf)..., method=method)
     return eta, f(eta)
-end
-
-
-function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}; method::String="mf")
-    etas, phi = get_eta(s, epsilons, method=method)
-    return MFABCCloud(s, epsilons, etas)
-end
-
-
-function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, burnsize::Int64; method::String="mf")
-    if burnsize>length(s)
-        error("Not enough sample points for specified burn-in")
-    end
-
-    out = Cloud{MFABCParticle}()
-    cf = Array{Bool,1}()
-
-    etas = (1.0, 1.0)
-    for (n,p) in enumerate(s)
-        mfp = MFABCParticle(p, epsilons, etas)
-        push!(out, mfp)
-        push!(cf, mfp.cf)
-        if n>burnsize
-            etas = get_eta(s[1:n], epsilons, cf, method=method)[1]
-        end
-    end
-
-    return out, etas
-  
 end
 
 
@@ -234,6 +238,7 @@ end
 
 using Distributed
 function BenchmarkCloud(mfabc::MFABC, N::Int64=10, outdir::String="./output/")::Cloud{BenchmarkParticle}
+# Simulate a Benchmark cloud for fixed continuation probabilities
     if nworkers()>1
         output = pmap(i->BenchmarkParticle(mfabc,i), 1:N)
     else
@@ -244,6 +249,7 @@ function BenchmarkCloud(mfabc::MFABC, N::Int64=10, outdir::String="./output/")::
 end
 
 function BenchmarkCloud(indir::String="./output/")
+# Read a previously simulated Benchmark Cloud
     fn_list = fieldnames(BenchmarkParticle)
     input = map(fn->readdlm(indir*string(fn)*".txt"), fn_list)
     cld = Cloud{BenchmarkParticle}()
@@ -255,6 +261,8 @@ function BenchmarkCloud(indir::String="./output/")
 end
 
 function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, N::Int64=10)::Cloud{MFABCParticle}
+# Multifidelity ABC algorithm with known continuation probabilities (which can therefore be parallelised)
+# N specifies the number of particles to simulate
     if nworkers()>1
         return pmap(i->MFABCParticle(mfabc, epsilons, etas, i), 1:N)
     else
@@ -262,7 +270,17 @@ function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple
     end
 end
 
+# Still missing: MFABCCloud out of the model specification (MFABC type), starting with unknown continuation probabilities
+# This approach is no longer parallelisable, as eta has to adapt
+# We could give each worker its own eta and adapt that?
+
+
+###### Converting benchmarks to multifidelity (known and unknown etas)
+
 function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::Cloud{MFABCParticle}
+# Multifidelity ABC algorithm with known continuation probabilities
+# budget specifies the point (in seconds) at which the algorithm ends
+# Could feasibly parallelise by keeping track of a parallel running cost for each worker in the cluster and ending the worker when that's exceeded
     running_cost = 0.0
     cloud = Cloud{MFABCParticle}()
     while running_cost < budget
@@ -271,3 +289,31 @@ function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple
     end
     return cloud        
 end
+
+function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}; method::String="mf")
+# Convert a benchmark cloud into a MFABC cloud using the entire benchmark set's information to get an optimal eta
+        etas, phi = get_eta(s, epsilons, method=method)
+        return MFABCCloud(s, epsilons, etas)
+end
+
+function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, burnsize::Int64; method::String="mf")
+# Convert a benchmark cloud into a MFABC cloud sequentially, using only the preceding information to inform eta at each iteration
+    if burnsize>length(s)
+        error("Not enough sample points for specified burn-in")
+    end
+    
+    out = Cloud{MFABCParticle}()
+    cf = Array{Bool,1}()
+    etas = (1.0, 1.0)
+    
+    for (n,p) in enumerate(s)
+        mfp = MFABCParticle(p, epsilons, etas)
+        push!(out, mfp)
+        push!(cf, mfp.cf)
+        if n>burnsize
+            etas = get_eta(s[1:n], epsilons, cf, method=method)[1]
+        end
+    end
+    return out, etas
+end
+    

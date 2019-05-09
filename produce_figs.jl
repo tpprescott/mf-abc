@@ -42,10 +42,8 @@ end
 using Plots, StatsPlots, KernelDensity, LaTeXStrings, Printf
 plotlyjs()
 
-#=eta_mf_Fi, phi_mf_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="mf"), F)...)
-eta_er_Fi, phi_er_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="er"), F)...)
-eta_ed_Fi, phi_ed_Fi = zip(map(Fi->get_eta(bm, epsilons, Fi, method="ed"), F)...) =#
-function MFABCCloud!(cloud::Array{MFABCParticle,1}, s, epsilons, etas)
+# Adapt the MFABCCloud constructor to save particles into a preassigned cloud
+function MFABCCloud!(cloud::Cloud{MFABCParticle}, s::Cloud{BenchmarkParticle}, epsilons, etas)
     cloud[:] = map(p->MFABCParticle(p, epsilons, etas), s)
     return nothing
 end

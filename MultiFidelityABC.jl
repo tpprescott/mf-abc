@@ -18,7 +18,7 @@ simset = Iterators.drop(splitsims,1)
 
 epsilons = (50.0, 50.0)
 F1(k) = (1.9<k[2]<2.1)
-F2(k) = (2.5<k[2]<2.6)
+F2(k) = (1.5<k[2]<1.6)
 F3(k) = k[2]
 F = [F1, F2, F3]
 budgets = [100.0,200.0,300.0]
