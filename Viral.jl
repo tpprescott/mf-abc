@@ -57,7 +57,7 @@ function summary_statistics(t_pop::Array{Times,1}, x_pop::Array{States,1})
     infected_threshold = 3
     derivative_horizon = 30.0
 
-    infected = [x[4,end]>0 for x in x_pop]
+    infected = [x[4,end]>infected_threshold for x in x_pop]
     viral_count = [x[4,end] for (x,inf_flag) in zip(x_pop, infected) if inf_flag]    
     viral_output = [(x[4,end] - x[4,findlast(t.<T-derivative_horizon)])/derivative_horizon for (t, x, inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
     infection_time =  [t[findfirst(x[4,:].>infected_threshold)] for (t,x,inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
