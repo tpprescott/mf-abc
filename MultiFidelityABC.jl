@@ -8,13 +8,21 @@ include("Repressilator.jl")
 using .MultiFidelityABC
 using LaTeXStrings
 
+### PRODUCE HUGE SIMULATIONS (only needed once)
+#= 
+Best to begin Julia with parallel workers set up using:
+% julia -p 10
+for 10 parallel workers, for example.
+=#
+# BenchmarkCloud(Repressilator.mf_prob, 5000000, "./repressilator/output/")
+# BenchmarkCloud(Viral.mf_prob, 5000000, "./repressilator/output/")
+
 #
 ## SET UP
 # Import the output from the repressilator simulations
-allsims = BenchmarkCloud("./Repressilator/output")
-splitsims = Iterators.partition(allsims, 10^4)
-bm = collect(first(splitsims))
-simset = Iterators.drop(splitsims,1)
+bm = BenchmarkCloud("./repressilator/output/")
+sim_sets = Iterators.partition(bm, 10^4)
+sim_set = collect(first(sim_sets))
 
 epsilons = (50.0, 50.0)
 F1(k) = (1.9<k[2]<2.1)
@@ -26,20 +34,17 @@ budgets = [100.0,200.0,300.0]
 ## PRODUCE FIGURES
 
 # Fig 1a
-fig1a = view_distances(bm, epsilons)
+fig1a = view_distances(sim_set, epsilons)
 # Fig 1b
-fig1b = view_distances(bm, epsilons, 2, L"n")
+fig1b = view_distances(sim_set, epsilons, 2, L"n")
 
 # Fig 2a
-fig2a = compare_efficiencies(bm, simset, epsilons, output="theory")
-# Fig 2b
-fig2b = compare_efficiencies(bm, simset, epsilons, output="plot")
-
-# Table 1
-t1 = compare_efficiencies(bm, simset, epsilons, output="table")
+fig2a = compare_efficiencies(bm, sim_sets, epsilons, output="theory")
+# Fig 2b, Table 1
+fig2b, t1, t1_latex = compare_efficiencies(bm, sim_sets, epsilons, output="plot")
 
 # Table 2, 3 (and table 2 insert)
-t2,t3,t2etas = observed_variances(bm, simset, epsilons, F, budgets)
+t2,t3,t2etas = observed_variances(bm, sim_sets, epsilons, F, budgets)
 
 ## SET UP
 # Import the output from the viral dynamics simulations
