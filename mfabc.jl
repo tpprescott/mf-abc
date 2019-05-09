@@ -54,26 +54,6 @@ function MFABCParticle(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tu
     return MFABCParticle(k, w, c, cf)
 end
 
-######## Converting benchmarks to MFABC (post-hoc)
-function MFABCParticle(p::BenchmarkParticle, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
-    close = (p.dist.<epsilons)
-    eta, w = (close[1]) ? (etas[1], 1) : (etas[2], 0)
-    cf = rand()<eta
-    if cf
-        c = sum(p.cost)
-        if xor(close...)
-            w += (close[2]-close[1])/eta
-        end
-    else
-        c = p.cost[1]
-    end
-    return MFABCParticle(p.k, w, c, cf)
-end
-
-function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
-    return map(p->MFABCParticle(p, epsilons, etas), s)
-end
-
 ########## Take a benchmark, find the optimal eta (for a specified method) and get the MFABC cloud.
 
 function sample_properties(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Real,Real}, Fweights::Array{Float64,1}=[1.0])
@@ -270,6 +250,19 @@ function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple
     end
 end
 
+function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::Cloud{MFABCParticle}
+    # Multifidelity ABC algorithm with known continuation probabilities
+    # budget specifies the point (in seconds) at which the algorithm ends
+    # Could feasibly parallelise by keeping track of a parallel running cost for each worker in the cluster and ending the worker when that's exceeded
+        running_cost = 0.0
+        cloud = Cloud{MFABCParticle}()
+        while running_cost < budget
+            append!(cloud, [MFABCParticle(mfabc, epsilons, etas)])
+            running_cost += cloud[end].c
+        end
+        return cloud        
+    end
+
 # Still missing: MFABCCloud out of the model specification (MFABC type), starting with unknown continuation probabilities
 # This approach is no longer parallelisable, as eta has to adapt.
 # We could give each worker its own eta and adapt that?
@@ -277,17 +270,23 @@ end
 
 ###### Converting benchmarks to multifidelity (known and unknown etas)
 
-function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::Cloud{MFABCParticle}
-# Multifidelity ABC algorithm with known continuation probabilities
-# budget specifies the point (in seconds) at which the algorithm ends
-# Could feasibly parallelise by keeping track of a parallel running cost for each worker in the cluster and ending the worker when that's exceeded
-    running_cost = 0.0
-    cloud = Cloud{MFABCParticle}()
-    while running_cost < budget
-        append!(cloud, [MFABCParticle(mfabc, epsilons, etas)])
-        running_cost += cloud[end].c
+function MFABCParticle(p::BenchmarkParticle, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
+    close = (p.dist.<epsilons)
+    eta, w = (close[1]) ? (etas[1], 1) : (etas[2], 0)
+    cf = rand()<eta
+    if cf
+        c = sum(p.cost)
+        if xor(close...)
+            w += (close[2]-close[1])/eta
+        end
+    else
+        c = p.cost[1]
     end
-    return cloud        
+    return MFABCParticle(p.k, w, c, cf)
+end
+
+function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
+    return map(p->MFABCParticle(p, epsilons, etas), s)
 end
 
 function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}; method::String="mf")

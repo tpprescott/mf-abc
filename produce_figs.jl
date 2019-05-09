@@ -48,9 +48,9 @@ function MFABCCloud!(cloud::Cloud{MFABCParticle}, s, epsilons, etas)
     return nothing
 end
 
-function get_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons, eta_vec::Array{Tuple{Float64,Float64},1})
+function get_efficiencies(sim_sets, epsilons, eta_vec::Array{Tuple{Float64,Float64},1})
     Random.seed!(123)
-    cloud_focus = MFABCCloud(bm, epsilons, (1.0,1.0))
+    cloud_focus = MFABCCloud(collect(first(sim_sets)), epsilons, (1.0,1.0))
     efficiencies = zeros(length(sim_sets),length(eta_vec))
     for (i,etas) in enumerate(eta_vec)
         for (j,sims) in enumerate(sim_sets)
@@ -85,7 +85,7 @@ function compare_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons::
     I = sortperm(phi_vec)
 
     if output=="plot"
-        efficiencies = get_efficiencies(bm, sim_sets, epsilons, eta_vec)
+        efficiencies = get_efficiencies(sim_sets, epsilons, eta_vec)
         fig = plot(color_palette=:darkrainbow,
             thickness_scaling=1,
             xlabel="Effective samples per second",
@@ -111,10 +111,6 @@ function compare_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons::
             end
         end
         
-        return fig
-
-    elseif output=="table"
-        efficiencies = get_efficiencies(bm, sim_sets, epsilons, eta_vec)
         pc_bigger_than(eff1,eff2) = count(F1>F2 for F1 in eff1 for F2 in eff2)/(length(eff1)*length(eff2))
         num_rows = size(efficiencies,2)-1
         tab = Array{Tuple{String, String, Float64},2}(undef,num_rows,num_rows)
@@ -130,7 +126,7 @@ function compare_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons::
         open("./efficiency_table.txt", "w") do f
             write(f, latextab)
         end
-        return tab, latextab
+        return fig, tab, latextab
     
     elseif output=="theory"
         
@@ -148,7 +144,9 @@ function compare_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons::
         plot!(collect(grd), x->x, color=[:black], linestyle=:dash, label=[])
         plot!(ones(size(grd)),collect(grd), color=[:black], linestyle=:dash, label=[])
 
-        contour!(collect(grd),collect(grd),(x,y)->1/phi((x,y), bm, epsilons),
+        sp = sample_properties(bm, epsilons)
+        phi_plot((x,y)) = phi((x,y), sp...)
+        contour!(collect(grd),collect(grd),(x,y)->1/phi_plot((x,y)),
         aspect_ratio=:equal,
         levels = (1/phi_mf).*[0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.6],
         color=[:grey],
@@ -193,23 +191,23 @@ function view_distances(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Fl
 
 end
 
-function observed_variances(bm::Cloud{BenchmarkParticle}, sims_set, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budgets::Array{Float64,1}=[Inf64])
+function observed_variances(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budgets::Array{Float64,1}=[Inf64])
     method_list = ["abc", "er", "ed", "mf"]
     vartab = Array{Array{Float64,1},2}(undef,length(F),length(method_list)+1)
     phitab = Array{Float64,2}(undef,length(F),length(method_list)+1)
     etatab = Array{Tuple{Float64,Float64},2}(undef,length(F),length(method_list)+1)
 
-    cloud_focus = MFABCCloud(collect(first(sims_set)), epsilons, (1.0,1.0))
+    cloud_focus = MFABCCloud(collect(first(sim_sets)), epsilons, (1.0,1.0))
     ess_eta = get_eta(bm, epsilons)[1]
 
-    Random.seed!(1457)
-    mu = zeros(length(sims_set),length(budgets))
+    Random.seed!(111)
+    mu = zeros(length(sim_sets),length(budgets))
     for (i,fun) in enumerate(F)
         for (j,mth) in enumerate(method_list)
             vartab[i,j] = zeros(length(budgets))
             etas, phitab[i,j] = get_eta(bm, epsilons, fun, method=mth)
-            for (k,sims) in enumerate(sims_set)
-                MFABCCloud!(cloud_focus, sims, epsilons, etas)
+            for (k,sim_set) in enumerate(sim_sets)
+                MFABCCloud!(cloud_focus, sim_set, epsilons, etas)
                 for (l,b) in enumerate(budgets)
                     mu[k,l] = estimate_mu(cloud_focus, fun, b)
                 end
@@ -222,8 +220,8 @@ function observed_variances(bm::Cloud{BenchmarkParticle}, sims_set, epsilons::Tu
         phitab[i,end] = phi(ess_eta, bm, epsilons, fun)
         etatab[i,end] = ess_eta
         vartab[i,end] = zeros(length(budgets))
-        for (k,sims) in enumerate(sims_set)
-            MFABCCloud!(cloud_focus, sims, epsilons, ess_eta)
+        for (k,sim_set) in enumerate(sim_sets)
+            MFABCCloud!(cloud_focus, sim_set, epsilons, ess_eta)
             for (l,b) in enumerate(budgets)
                 mu[k,l] = estimate_mu(cloud_focus, fun, b)
             end
@@ -236,7 +234,7 @@ end
 
 function efficiency_histogram(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons; method::String="mf")
     etas = get_eta(bm, epsilons, method=method)[1]
-    efficiencies = vec(get_efficiencies(bm, sim_sets, epsilons, [etas]))
+    efficiencies = vec(get_efficiencies(sim_sets, epsilons, [etas]))
 
     title_dictionary = Dict("mf"=>"Early Accept/Reject", "ed"=>"Early Decision", "er"=>"Early Rejection")
     fig = plot(xlabel="Effective samples per second",
