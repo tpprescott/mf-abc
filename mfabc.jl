@@ -271,7 +271,7 @@ function MFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple
 end
 
 # Still missing: MFABCCloud out of the model specification (MFABC type), starting with unknown continuation probabilities
-# This approach is no longer parallelisable, as eta has to adapt
+# This approach is no longer parallelisable, as eta has to adapt.
 # We could give each worker its own eta and adapt that?
 
 

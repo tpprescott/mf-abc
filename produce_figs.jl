@@ -42,13 +42,13 @@ end
 using Plots, StatsPlots, KernelDensity, LaTeXStrings, Printf
 plotlyjs()
 
+function MFABCCloud!(cloud::Cloud{MFABCParticle}, s, epsilons, etas)
 # Adapt the MFABCCloud constructor to save particles into a preassigned cloud
-function MFABCCloud!(cloud::Cloud{MFABCParticle}, s::Cloud{BenchmarkParticle}, epsilons, etas)
     cloud[:] = map(p->MFABCParticle(p, epsilons, etas), s)
     return nothing
 end
 
-function get_efficiencies(bm, sim_sets, epsilons, eta_vec)
+function get_efficiencies(bm::Cloud{BenchmarkParticle}, sim_sets, epsilons, eta_vec::Array{Tuple{Float64,Float64},1})
     Random.seed!(123)
     cloud_focus = MFABCCloud(bm, epsilons, (1.0,1.0))
     efficiencies = zeros(length(sim_sets),length(eta_vec))
