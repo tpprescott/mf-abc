@@ -11,7 +11,7 @@ using LaTeXStrings
 #
 ## SET UP
 # Import the output from the repressilator simulations
-allsims = BenchmarkCloud("./output/")
+allsims = BenchmarkCloud("./Repressilator/output")
 splitsims = Iterators.partition(allsims, 10^4)
 bm = collect(first(splitsims))
 simset = Iterators.drop(splitsims,1)
