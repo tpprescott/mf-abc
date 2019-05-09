@@ -21,6 +21,7 @@ struct MFABCParticle <: Particle
     k::Parameters   # Record the parameter values
     w::Float64      # Weighted (may be negative)
     c::Float64      # Total simulation cost
+    cf::Bool        # Continuation Flag
 end
 
 Cloud{T} = Array{T, 1} where T<:Particle
@@ -39,7 +40,8 @@ function MFABCParticle(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tu
     k::Parameters = mfabc.parameter_sampler()
     (d_lo,pass),c_lo = @timed mfabc.lofi(k)
     eta, w = (d_lo < epsilons[1]) ? (etas[1], 1) : (etas[2], 0)
-    if rand()<eta
+    cf = (rand()<eta)
+    if cf
         (d_hi), c_hi = @timed mfabc.hifi(k,pass)
         c = c_lo + c_hi
         close = ((d_lo, d_hi) .< epsilons)
@@ -49,14 +51,15 @@ function MFABCParticle(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tu
     else
         c = c_lo
     end
-    return MFABCParticle(k, w, c)
+    return MFABCParticle(k, w, c, cf)
 end
 
 ######## Converting benchmarks to MFABC (post-hoc)
 function MFABCParticle(p::BenchmarkParticle, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
     close = (p.dist.<epsilons)
     eta, w = (close[1]) ? (etas[1], 1) : (etas[2], 0)
-    if rand()<eta
+    cf = rand()<eta
+    if cf
         c = sum(p.cost)
         if xor(close...)
             w += (close[2]-close[1])/eta
@@ -64,8 +67,9 @@ function MFABCParticle(p::BenchmarkParticle, epsilons::Tuple{Float64, Float64}, 
     else
         c = p.cost[1]
     end
-    return MFABCParticle(p.k, w, c)
+    return MFABCParticle(p.k, w, c, cf)
 end
+
 function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
     return map(p->MFABCParticle(p, epsilons, etas), s)
 end
@@ -92,6 +96,21 @@ function sample_properties(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Real,Rea
     Fweights = (F .- Fbar).^2
     return sample_properties(s, epsilons, Fweights)
 end
+function sample_properties(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Real,Real}, cf::Array{Bool,1})
+    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s[cf], epsilons)
+    rho_m = mean([p.dist[1]<epsilons[1] for p in s])
+    rho_k = mean([p.dist[1]<epsilons[1] for p in s[cf]])
+
+    ct = mean([p.cost[1] for p in s])
+    c_p *= rho_m/rho_k
+    c_n *= (1-rho_m)/(1-rho_k)
+    p_tp *= rho_m/rho_k
+    p_fp *= rho_m/rho_k
+    p_fn *= (1-rho_m)/(1-rho_k)
+
+    return p_tp, p_fp, p_fn, ct, c_p, c_n
+
+end
 
 function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64})
     p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s, epsilons)
@@ -108,6 +127,15 @@ function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64},
 end
 function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
     p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s, epsilons, parameterFun)
+    storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
+    storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
+end
+function phi(eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
+    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s,epsilons,cf)
+    return (p_tp - p_fp + (p_fp/eta[1]) + (p_fn/eta[2])) * (ct + c_p*eta[1] + c_n*eta[2])
+end
+function dphi!(storage, eta, s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
+    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(s,epsilons,cf)
     storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
     storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
 end
@@ -155,10 +183,41 @@ function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, 
     eta = get_eta(f, g!, method=method)
     return eta, f(eta)
 end
+function get_eta(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1}; method::String="mf")
+    f(x) = phi(x,s,epsilons,cf)
+    g!(st,x) = dphi!(st,x,s,epsilons,cf)
+
+    eta = get_eta(f, g!, method=method)
+    return eta, f(eta)
+end
+
 
 function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}; method::String="mf")
     etas, phi = get_eta(s, epsilons, method=method)
     return MFABCCloud(s, epsilons, etas)
+end
+
+
+function MFABCCloud(s::Cloud{BenchmarkParticle}, epsilons::Tuple{Float64, Float64}, burnsize::Int64; method::String="mf")
+    if burnsize>length(s)
+        error("Not enough sample points for specified burn-in")
+    end
+
+    out = Cloud{MFABCParticle}()
+    cf = Array{Bool,1}()
+
+    etas = (1.0, 1.0)
+    for (n,p) in enumerate(s)
+        mfp = MFABCParticle(p, epsilons, etas)
+        push!(out, mfp)
+        push!(cf, mfp.cf)
+        if n>burnsize
+            etas = get_eta(s[1:n], epsilons, cf, method=method)[1]
+        end
+    end
+
+    return out, etas
+  
 end
 
 
