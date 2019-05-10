@@ -14,14 +14,14 @@ Best to begin Julia with parallel workers set up using:
 % julia -p 10
 for 10 parallel workers, for example.
 =#
-# BenchmarkCloud(Repressilator.mf_prob, 5000000, "./repressilator/output/")
-# BenchmarkCloud(Viral.mf_prob, 5000000, "./repressilator/output/")
+# MakeBenchmarkCloud(Repressilator.mf_prob, 5000000, "./repressilator/output/")
+# MakeBenchmarkCloud(Viral.mf_prob, 5000000, "./repressilator/output/")
 
-#
+#=
 ## SET UP
 
 # Import the output from the repressilator simulations
-bm = BenchmarkCloud("./repressilator/output/")
+bm = MakeBenchmarkCloud("./repressilator/output/")
 sim_sets = Iterators.partition(bm, 10^4)
 sim_set = collect(first(sim_sets))
 
