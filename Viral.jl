@@ -93,8 +93,7 @@ end
 
 using Distributions
 function prior()::Parameters
-    k1 = k_nominal[1] * 1.5^rand(Uniform(-1,1)) # Scale first parameter by factor between 2/3 and 3/2
-    return k1, k_nominal[2], k_nominal[3], k_nominal[4], k_nominal[5], k_nominal[6]
+    return map(ki->ki*(1.5^rand(Uniform(-1,1))), k_nominal) # Scale nominal parameters by factor between 2/3 and 3/2
 end
 
 mf_prob = MFABC(prior, lofi, hifi)
