@@ -25,16 +25,38 @@ BenchmarkCloud = Array{Particle{2}, 1}
 MFABCCloud = Array{MFABCParticle, 1}
 Cloud = Union{BenchmarkCloud, MFABCCloud}
 
-######## Running simulations
-function BenchmarkParticle(mfabc::MFABC, i::Int64=1)
+######## Running simulations: benchmark particles ignore MFABC
+function BenchmarkParticle(mfabc::MFABC, i::Int64=1)::Particle{2}
    
     k::Parameters = mfabc.parameter_sampler()
     (d_lo,pass),c_lo = @timed mfabc.lofi(k)
     (d_hi),c_hi = @timed mfabc.hifi(k,pass)
     
-    return Particle(k, (d_lo, d_hi), (c_lo, c_hi))
+    return Particle{2}(k, (d_lo, d_hi), (c_lo, c_hi))
 end
 
+using Distributed
+function MakeBenchmarkCloud(mfabc::MFABC, N::Int64=10, outdir::String="./output/")::BenchmarkCloud
+# Simulate a Benchmark cloud for fixed continuation probabilities
+    if nworkers()>1
+        output = pmap(i->BenchmarkParticle(mfabc,i), 1:N)
+    else
+        output = map(i->BenchmarkParticle(mfabc,i), 1:N)
+    end
+    write_cloud(output, outdir)
+    return output
+end
+
+######## Running simulations: apply MFABC with known eta
+# Apply either to:
+# de novo simulations (mfabc::MFABC) or;
+# previously completed simulations (p::Particle{2})
+
+############
+# PARTICLES
+############
+
+# De novo
 function MFABCParticle(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, i::Int64=1)
     k::Parameters = mfabc.parameter_sampler()
     (d_lo,pass),c_lo = @timed mfabc.lofi(k)
@@ -50,103 +72,169 @@ function MFABCParticle(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tu
     else
         p = Particle(k, (d_lo,), (c_lo,))
     end
-    return MFABCParticle(p,eta,w)
+    return MFABCParticle(p,eta,w), sum(p.cost)
 end
 
-########## Take a benchmark, find the optimal eta (for a specified method) and get the MFABC cloud.
+# Convert
+function MFABCParticle(p::Particle{2}, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, i::Int64=1)
+    close = (p.dist.<epsilons)
+    etas==(1.0, 1.0) && (return MFABCParticle(p, 1.0, 1.0*close[2]), sum(p.cost))
+    eta, w = (close[1]) ? (etas[1], 1.0) : (etas[2], 0.0)
+    if rand()<eta
+        if xor(close...)
+            w += (close[2]-close[1])/eta
+        end
+        return MFABCParticle(p, eta, w), sum(p.cost)
+    else
+        q = Particle{1}(p.k, (p.dist[1],), (p.cost[1],))
+        return MFABCParticle(q, eta, w), p.cost[1]
+    end
+end
 
-function sample_properties(s::BenchmarkCloud, epsilons::Tuple{Real,Real}, Fweights::Array{Float64,1}=[1.0])
+############
+# CLOUDS
+############
+
+## Known, fixed eta (no dependence on a function to be estimated, either)
+
+# de novo
+function MakeMFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}; kwargs...)::MFABCCloud
+# Multifidelity ABC algorithm with known continuation probabilities (which can therefore be parallelised)
+    kwargs = Dict(kwargs)
+    if haskey(kwargs, :N)
+        N = Integer(kwargs[:N]) # Specifies the number of particles to simulate
+        if nworkers()>1
+            return pmap(i->MFABCParticle(mfabc, epsilons, etas, i)[1], 1:N)
+        else
+            return map(i->MFABCParticle(mfabc, epsilons, etas, i)[1], 1:N)
+        end
+    elseif haskey(kwargs, :budget)
+        b = Float64(kwargs[:budget])
+        run_cost = 0.0
+        cloud = MFABCCloud()
+        while 0<1
+            pp, c = MFABCParticle(mfabc, epsilons, etas)
+            run_cost += c
+            (run_cost < b) ? push!(cloud, pp) : return cloud 
+        end
+    else
+        error("No size indication (N or budget)")
+    end
+end
+
+# convert
+function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})::MFABCCloud
+    return map(p->MFABCParticle(p, epsilons, etas)[1], s) # First component is the particle (second is cost of particle)
+end
+
+## Unknown eta: need to take into account finding a good eta, potentially given a function to be estimated
+
+# de novo: this has to create a burn-in cloud and then adapt eta afterwards
+function MakeMFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}; burnin::Int64, method::String="mf", kwargs...)::MFABCCloud
+    s = MakeBenchmarkCloud(mfabc, burnin)
+    return MakeMFABCCloud(mfabc, s, epsilons; method=method, kwargs...)
+end
+function MakeMFABCCloud(mfabc::MFABC, s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
+# Here s is a calculated burn-in set of hi/lo-fi simulation pairs
+    kd = Dict(kwargs)
+    cloud = MakeMFABCCloud(s, epsilons, (1.0, 1.0))
+    burnin=length(s)
+    if haskey(kd, :N)
+        NN = Integer(kd[:N])-burnin # Input specifies the total number of particles (takes precedence over budget), NN here calculates additional particles needed
+        for n in 1:NN
+            etas = get_eta(cloud, epsilons; method=method, kwargs...)[1]
+            push!(cloud, MFABCParticle(mfabc, epsilons, etas)[1])
+        end
+    elseif haskey(kd, :budget)
+        b = Float64(kd[:budget])
+        run_cost = sum([sum(p.cost) for p in s])
+        while run_cost<b
+            etas = get_eta(cloud, epsilons; method=method, kwargs...)[1]
+            pp, c = MFABCParticle(mfabc, epsilons, etas)
+            run_cost += c
+            push!(cloud, pp) 
+        end
+    end
+    return cloud
+end
+
+# convert (fixed eta or unknown eta: determined by specifying a burnin or otherwise)
+
+function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
+# Continuation probabilities are either inferred from the entire benchmark set (posthoc), or sequentially (after a burn-in period)
+    kd = Dict(kwargs)
+    if haskey(kd,:burnin)
+        n_b = kd[:burnin]::Int64
+        return MakeMFABCCloud_(s, epsilons, n_b; method=method, kwargs...)
+    else
+    # Convert a benchmark cloud into a MFABC cloud using the entire benchmark set's information to get an optimal eta
+        etas = get_eta(s, epsilons; method=method, kwargs...)[1]
+        return MakeMFABCCloud(s, epsilons, etas)
+    end    
+end
+function MakeMFABCCloud_(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, burnin_size::Int64; method::String="mf", kwargs...)
+# Convert a benchmark cloud into a MFABC cloud sequentially, using only the preceding information to inform eta at each iteration
+# This is a very artificial approach, as we are ignoring information from simulations already carried out
+    out = MakeMFABCCloud(s[1:burnin_size], epsilons, (1.0,1.0))
     
-    O_lo = [p.dist[1]<epsilons[1] for p in s]
-    O_hi = [p.dist[2]<epsilons[2] for p in s]
-
-    p_tp = mean(Fweights .* (O_lo .& O_hi))
-    p_fp = mean(Fweights .* (O_lo .& .~O_hi))
-    p_fn = mean(Fweights .* (.~O_lo .& O_hi))
-    ct = mean([p.cost[1] for p in s])
-    c_p = mean([p.cost[2] for p in s if p.dist[1]<epsilons[1]]) * mean(O_lo)
-    c_n = mean([p.cost[2] for p in s if p.dist[1]>=epsilons[1]]) * mean(.~O_lo)
-
-    return p_tp, p_fp, p_fn, ct, c_p, c_n
+    for n in (burnin_size+1):length(s)
+        etas = get_eta(out, epsilons; method=method, kwargs...)[1]
+        push!(out, MFABCParticle(s[n], epsilons, etas))
+    end
+    return out
 end
-function sample_properties(s::BenchmarkCloud, epsilons::Tuple{Real,Real}, parameterFun::Function)    
-    F = [parameterFun(p.k) for p in s]
-    Fbar = mean([parameterFun(p.k) for p in s if p.dist[2]<epsilons[2]])
-    Fweights = (F .- Fbar).^2
-    return sample_properties(s, epsilons, Fweights)
-end
-function sample_properties(s::MFABCCloud, epsilons::Tuple{Real,Real})
+
+########## MFABC Clouds relies on "GET_ETA", calculated as follows:
+
+function sample_properties(s::MFABCCloud, epsilons::Tuple{Float64, Float64}; kwargs...)
+    kd = Dict(kwargs)
+
+    if haskey(kd, :F)
+        fun = kd[:F]::Function
+        F_i = [fun(pp.p.k) for pp in s]
+        w_i = [pp.w for pp in s]
+        Fbar = sum(F_i .* w_i)/sum(w_i)
+        Fweights = (F_i .- Fbar).^2
+    else
+        Fweights = ones(length(s))
+    end
+
+    is_bm = [isa(pp.p, Particle{2}) for pp in s]
+    s2 = s[is_bm]
+    Fweights2 = Fweights[is_bm]
+
+    if .&(is_bm...)
+        rhom=0.5
+        rhok=0.5
+    else
+        rhom = mean([pp.p.dist[1]<epsilons[1] for pp in s])
+        rhok = mean([pp.p.dist[1]<epsilons[1] for pp in s2])
+    end
+
+    O_lo = [pp.p.dist[1]<epsilons[1] for pp in s2]
+    O_hi = [pp.p.dist[2]<epsilons[2] for pp in s2]
     
-    s_bm = filter(x->isa(x, Particle{2}), [pp.p for pp in s])
-    p_tp, p_fp, p_fn, ct, c_p, c_n = sample_properties(BenchmarkCloud(s_bm), epsilons)
-
-    rhom = mean([pp.p.dist[1]<epsilons[1] for pp in s])
-    rhok = mean([p.dist[2]<epsilons[2] for p in s_bm])
-
+    p_tp = (rhom/rhok) * mean(Fweights2.*(O_lo .& O_hi))
+    p_fp = (rhom/rhok) * mean(Fweights2.*(O_lo .& .~O_hi))
+    p_fn = ((1-rhom)/(1-rhok)) * mean(Fweights2.*(.~O_lo .& O_hi))
     ct = mean([pp.p.cost[1] for pp in s])
-    c_p *= rhom/rhok
-    c_n *= (1-rhom)/(1-rhok)
-
-    p_tp *= rhom/rhok
-    p_fp *= rhom/rhok
-    p_fn *= (1-rhom)/(1-rhok)
+    c_p = (rhom/rhok) * mean([pp.p.cost[2] for pp in s2] .* O_lo)
+    c_n = ((1-rhom)/(1-rhok)) * mean([pp.p.cost[2] for pp in s2] .* .~O_lo)
 
     return p_tp, p_fp, p_fn, ct, c_p, c_n
+end
+function sample_properties(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; kwargs...)
+    t = MakeMFABCCloud(s, epsilons, (1.0, 1.0))
+    return sample_properties(t, epsilons; kwargs...)
 end
 
 function phi(eta, p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64)
     return (p_tp - p_fp + (p_fp/eta[1]) + (p_fn/eta[2])) * (ct + c_p*eta[1] + c_n*eta[2])
 end
-function phi(eta, s::Cloud, epsilons::Tuple{Float64,Float64})
-    return phi(eta, sample_properties(s, epsilons)...)
-end
-function phi(eta, s::BenchmarkCloud, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
-    return phi(eta, sample_properties(s, epsilons, parameterFun)...)
+function phi(eta, s::Cloud, epsilons::Tuple{Float64, Float64}; kwargs...)
+    return phi(eta, sample_properties(s, epsilons; kwargs...)...)
 end
 
-
-### The following version of get_eta uses optimisation (requiring the derivative of phi too)
-# No longer called
-#=
-function dphi!(storage, eta, p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64)
-    storage[1] = c_p * (p_tp - p_fp + (p_fn/eta[2])) - (p_fp/(eta[1]^2))*(ct + c_n*eta[2])
-    storage[2] = c_n * (p_tp - p_fp + (p_fp/eta[1])) - (p_fn/(eta[2]^2))*(ct + c_p*eta[1])
-end
-function dphi!(storage, eta, s::BenchmarkCloud, epsilons::Tuple{Float64,Float64})
-    dphi!(storage, eta, sample_properties(s, epsilons)...)
-end
-function dphi!(storage, eta, s::BenchmarkCloud, epsilons::Tuple{Float64,Float64}, parameterFun::Function)
-    dphi!(storage,eta, sample_properties(s, epsilons, parameterFun)...)
-end
-function dphi!(storage, eta, s::BenchmarkCloud, epsilons::Tuple{Float64,Float64}, cf::Array{Bool,1})
-    dphi!(storage,eta, sample_properties(s, epsilons, cf)...)
-end
-using Optim
-function get_eta(f::Function, g!::Function; method::String="mf")
-    if method=="mf"
-        initial_x = [0.5, 0.5]
-        od = OnceDifferentiable(f, g!, initial_x)
-        lower = [0.0, 0.0]
-        upper = [1.0, 1.0]
-        inner_optimizer = GradientDescent()
-        result = optimize(od, lower, upper, initial_x, Fminbox(inner_optimizer))
-        return eta=(Optim.minimizer(result)[1], Optim.minimizer(result)[2])
-
-    elseif method=="er"
-        result = optimize(x2->f([1,x2]), 0.0, 1.0, Brent())
-        return eta=(1.0, Optim.minimizer(result))
-
-    elseif method=="ed"
-        result = optimize(xx->f([xx,xx]), 0.0, 1.0, Brent())
-        return eta=(Optim.minimizer(result), Optim.minimizer(result))
-
-    else
-        return eta=(1.0,1.0)
-    end
-end
-=#
-
-#### The rest of the get_eta are the ones used
 function get_eta(p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64; method::String="mf")
     Rp = p_fp/(c_p/ct)
     Rn = p_fn/(c_n/ct)
@@ -182,24 +270,18 @@ function get_eta(p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::
         return (1.0, 1.0)
     end
 end
-function get_eta(s::Cloud, epsilons::Tuple{Float64,Float64}; method::String="mf")
+
+function get_eta(s::Cloud, epsilons::Tuple{Float64, Float64}; method::String="mf", lower_eta::Float64=0.01, kwargs...)
     # Keyword "method" can be chosen from "mf" (multifidelity), "er" (early rejection), "ed" (early decision)
     # Any other keyword will give the ABC approach with no early rejection or acceptance at all.
     
-    f(x) = phi(x,s,epsilons)
-    eta = get_eta(sample_properties(s,epsilons)..., method=method)
-    return eta, f(eta)
-end
-function get_eta(s::BenchmarkCloud, epsilons::Tuple{Float64,Float64}, parameterFun::Function; method::String="mf")
-    # Keyword "method" can be chosen from "mf" (multifidelity), "er" (early rejection), "ed" (early decision)
-    # Any other keyword will give the ABC approach with no early rejection or acceptance at all.
-    
-    f(x) = phi(x,s,epsilons,parameterFun)
-    eta = get_eta(sample_properties(s,epsilons,parameterFun)..., method=method)
-    return eta, f(eta)
+    sp = sample_properties(s, epsilons; kwargs...)
+    eta = get_eta(sp..., method=method)
+    eta = max.(lower_eta, eta)
+    return eta, phi(eta, sp...)
 end
 
-######## Creating clouds
+######## Read/write (benchmark) clouds
 
 using DelimitedFiles
 function write_cloud(cld::BenchmarkCloud, outdir::String="./output/") where {T}
@@ -208,18 +290,6 @@ function write_cloud(cld::BenchmarkCloud, outdir::String="./output/") where {T}
         cloud_field = [getfield(particle, fn) for particle in cld]
         writedlm(outdir*string(fn)*".txt", cloud_field)
     end
-end
-
-using Distributed
-function MakeBenchmarkCloud(mfabc::MFABC, N::Int64=10, outdir::String="./output/")::BenchmarkCloud
-# Simulate a Benchmark cloud for fixed continuation probabilities
-    if nworkers()>1
-        output = pmap(i->BenchmarkParticle(mfabc,i), 1:N)
-    else
-        output = map(i->BenchmarkParticle(mfabc,i), 1:N)
-    end
-    write_cloud(output, outdir)
-    return output
 end
 
 function MakeBenchmarkCloud(indir::String="./output/")::BenchmarkCloud
@@ -232,87 +302,4 @@ function MakeBenchmarkCloud(indir::String="./output/")::BenchmarkCloud
         push!(cld, Particle{2}(Parameters(raw_entries[1]), NTuple{2,Float64}(raw_entries[2]), NTuple{2,Float64}(raw_entries[3])))
     end
     return cld
-end
-
-function MakeMFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, N::Int64=10)::MFABCCloud
-# Multifidelity ABC algorithm with known continuation probabilities (which can therefore be parallelised)
-# N specifies the number of particles to simulate
-    if nworkers()>1
-        return pmap(i->MFABCParticle(mfabc, epsilons, etas, i), 1:N)
-    else
-        return map(i->MFABCParticle(mfabc, epsilons, etas, i), 1:N)
-    end
-end
-
-function MakeMFABCCloud(mfabc::MFABC, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::MFABCCloud
-    # Multifidelity ABC algorithm with known continuation probabilities
-    # budget specifies the point (in seconds) at which the algorithm ends
-    # Could feasibly parallelise by keeping track of a parallel running cost for each worker in the cluster and ending the worker when that's exceeded
-        running_cost = 0.0
-        cloud = MFABCCloud()
-        while running_cost < budget
-            pp = MFABCParticle(mfabc, epsilons, etas)
-            push!(cloud, pp)
-            running_cost += sum(pp.p.cost)
-        end
-        return cloud
-    end
-
-# Still missing: MFABCCloud out of the model specification (MFABC type), starting with unknown continuation probabilities
-# This approach is no longer parallelisable, as eta has to adapt.
-# We could give each worker its own eta and adapt that?
-
-
-###### Converting benchmarks to multifidelity (known and unknown etas)
-
-function MFABCParticle(p::Particle{2}, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})
-    close = (p.dist.<epsilons)
-    eta, w = (close[1]) ? (etas[1], 1) : (etas[2], 0)
-    if rand()<eta
-        if xor(close...)
-            w += (close[2]-close[1])/eta
-        end
-        return MFABCParticle(p, eta, w)
-    else
-        q = Particle{1}(p.k, (p.dist[1],), (p.cost[1],))
-        return MFABCParticle(q, eta, w)
-    end
-end
-
-function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})::MFABCCloud
-    return map(p->MFABCParticle(p, epsilons, etas), s)
-end
-
-function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
-# Continuation probabilities are either inferred from the entire benchmark set (posthoc), or sequentially (after a burn-in period)
-
-    kwargs = Dict(kwargs)
-    if haskey(kwargs,:burnin)
-        n_b = kwargs[:burnin]::Int64
-        return MakeMFABCCloud_(s, epsilons, n_b, method=method)
-    else
-    # Convert a benchmark cloud into a MFABC cloud using the entire benchmark set's information to get an optimal eta
-        etas, phi = get_eta(s, epsilons, method=method)
-        return MakeMFABCCloud(s, epsilons, etas)
-    end
-    
-end
-
-function MakeMFABCCloud_(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, burnsize::Int64; method::String="mf")
-# Convert a benchmark cloud into a MFABC cloud sequentially, using only the preceding information to inform eta at each iteration
-    if burnsize>length(s)
-        error("Not enough sample points for specified burn-in")
-    end
-    
-    out = MFABCCloud()
-    etas = (1.0, 1.0)
-    
-    for (n,p) in enumerate(s)
-        mfp = MFABCParticle(p, epsilons, etas)
-        push!(out, mfp)
-        if n>burnsize
-            etas, phi = get_eta(out, epsilons, method=method)
-        end
-    end
-    return out, etas
 end
