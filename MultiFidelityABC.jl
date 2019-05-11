@@ -17,13 +17,12 @@ for 10 parallel workers, for example.
 # MakeBenchmarkCloud(Repressilator.mf_prob, 5000000, "./repressilator/output/")
 # MakeBenchmarkCloud(Viral.mf_prob, 5000000, "./repressilator/output/")
 
-#=
+#
 ## SET UP
 
 # Import the output from the repressilator simulations
 bm = MakeBenchmarkCloud("./repressilator/output/")
-sim_sets = Iterators.partition(bm, 10^4)
-sim_set = collect(first(sim_sets))
+sample_size = 10^4
 
 epsilons = (50.0, 50.0)
 F1(k) = (1.9<k[2]<2.1)
@@ -31,7 +30,7 @@ F2(k) = (1.5<k[2]<1.6)
 F3(k) = k[2]
 F = [F1, F2, F3]
 budgets = [100.0,200.0,300.0]
-=#
+#
 
 #=
 ## PRODUCE FIGURES

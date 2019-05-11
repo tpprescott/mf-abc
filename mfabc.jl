@@ -36,13 +36,16 @@ function BenchmarkParticle(mfabc::MFABC, i::Int64=1)::Particle{2}
 end
 
 using Distributed
-function MakeBenchmarkCloud(mfabc::MFABC, N::Int64=10, outdir::String="./output/")::BenchmarkCloud
+function MakeBenchmarkCloud(mfabc::MFABC, N::Int64)::BenchmarkCloud
 # Simulate a Benchmark cloud for fixed continuation probabilities
     if nworkers()>1
-        output = pmap(i->BenchmarkParticle(mfabc,i), 1:N)
+        return pmap(i->BenchmarkParticle(mfabc,i), 1:N)
     else
-        output = map(i->BenchmarkParticle(mfabc,i), 1:N)
+        return map(i->BenchmarkParticle(mfabc,i), 1:N)
     end
+end
+function MakeBenchmarkCloud(mfabc::MFABC, N::Int64, outdir::String)::BenchmarkCloud
+    output = MakeBenchmarkCloud(mfabc, N)
     write_cloud(output, outdir)
     return output
 end
@@ -191,7 +194,7 @@ function sample_properties(s::MFABCCloud, epsilons::Tuple{Float64, Float64}; kwa
 
     if haskey(kd, :F)
         fun = kd[:F]::Function
-        F_i = [fun(pp.p.k) for pp in s]
+        F_i = map(pp->fun(pp.p.k), s)
         w_i = [pp.w for pp in s]
         Fbar = sum(F_i .* w_i)/sum(w_i)
         Fweights = (F_i .- Fbar).^2
@@ -203,14 +206,9 @@ function sample_properties(s::MFABCCloud, epsilons::Tuple{Float64, Float64}; kwa
     s2 = s[is_bm]
     Fweights2 = Fweights[is_bm]
 
-    if .&(is_bm...)
-        rhom=0.5
-        rhok=0.5
-    else
-        rhom = mean([pp.p.dist[1]<epsilons[1] for pp in s])
-        rhok = mean([pp.p.dist[1]<epsilons[1] for pp in s2])
-    end
-
+    rhom = mean([pp.p.dist[1]<epsilons[1] for pp in s])
+    rhok = mean([pp.p.dist[1]<epsilons[1] for pp in s2])
+    
     O_lo = [pp.p.dist[1]<epsilons[1] for pp in s2]
     O_hi = [pp.p.dist[2]<epsilons[2] for pp in s2]
     
@@ -223,9 +221,30 @@ function sample_properties(s::MFABCCloud, epsilons::Tuple{Float64, Float64}; kwa
 
     return p_tp, p_fp, p_fn, ct, c_p, c_n
 end
+
 function sample_properties(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; kwargs...)
-    t = MakeMFABCCloud(s, epsilons, (1.0, 1.0))
-    return sample_properties(t, epsilons; kwargs...)
+    kd = Dict(kwargs)
+    if haskey(kd, :F)
+        fun = kd[:F]::Function
+        F_i = map(p->fun(p.k), s)
+        w_i = [p.dist[2]<epsilons[2] for p in s]
+        Fbar = sum(F_i .* w_i)/sum(w_i)
+        Fweights = (F_i .- Fbar).^2
+    else
+        Fweights = ones(length(s))
+    end
+
+    O_lo = [p.dist[1]<epsilons[1] for p in s]
+    O_hi = [p.dist[2]<epsilons[2] for p in s]
+    
+    p_tp = mean(Fweights.*(O_lo .& O_hi))
+    p_fp = mean(Fweights.*(O_lo .& .~O_hi))
+    p_fn = mean(Fweights.*(.~O_lo .& O_hi))
+    ct = mean([p.cost[1] for p in s])
+    c_p = mean([p.cost[2] for p in s] .* O_lo)
+    c_n = mean([p.cost[2] for p in s] .* .~O_lo)
+
+    return p_tp, p_fp, p_fn, ct, c_p, c_n
 end
 
 function phi(eta, p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::Float64, c_n::Float64)
@@ -296,10 +315,15 @@ function MakeBenchmarkCloud(indir::String="./output/")::BenchmarkCloud
 # Read a previously simulated Benchmark Cloud
     fn_list = fieldnames(Particle{2})
     input = map(fn->readdlm(indir*string(fn)*".txt"), fn_list)
-    cld = BenchmarkCloud()
-    for i in 1:size(input[1],1)
-        raw_entries = [fields[i,:] for fields in input]
-        push!(cld, Particle{2}(Parameters(raw_entries[1]), NTuple{2,Float64}(raw_entries[2]), NTuple{2,Float64}(raw_entries[3])))
+    n = size(input[1],1)
+    cld = BenchmarkCloud(undef, n)
+    for i in 1:n
+        cld[i] = Particle{2}(Parameters(input[1][i,:]), NTuple{2,Float64}(input[2][i,:]), NTuple{2,Float64}(input[3][i,:]))
     end
     return cld
+end
+
+function MakeMFABCCloud(indir::String="./output/", epsilons::Tuple{Float64, Float64}=(0.0,0.0))::MFABCCloud
+    s = MakeBenchmarkCloud(indir)
+    return MakeMFABCCloud(s,epsilons,(1.0,1.0))
 end
