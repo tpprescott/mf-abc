@@ -34,7 +34,7 @@ end
 ####################################
 
 using Plots, StatsPlots, KernelDensity, LaTeXStrings, Printf
-plotlyjs()
+pyplot()
 
 
 function get_efficiencies(bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, size_samples::Int64, eta_vec::Array{Tuple{Float64,Float64},1})
@@ -120,8 +120,8 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     elseif output=="theory"
         
         plot(color_palette=:darkrainbow, legend=:none, grid=:none,
-            xlabel=L"\eta_1",
-            ylabel=L"\eta_2",
+            xlabel="\\eta_1",
+            ylabel="\\eta_2",
             labelfontsize=10,
             title="Continuation Probabilities and Efficiency Landscape",
             titlefontsize=11)
@@ -155,12 +155,12 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64})
     fp = [p.dist for p in s if ((p.dist[1] < epsilons[1]) & (p.dist[2] >= epsilons[2])) ]
     fn = [p.dist for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
     # Compare low and high fidelity
-    plot(; title="Distance from data: low and high fidelity simulations", titlefontsize=10, 
+    plot(; title="Distance from data: low and high fidelity simulations", titlefontsize=12, 
     aspect_ratio=:equal, grid=:none, legend=(0.3,0.9),
-    xlabel=L"\tilde{d}(\tilde{y},\tilde{y}_{obs})", ylabel=L"d(y,y_{obs})", labelfontsize=8)
-    scatter!(match, markersize=2, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=3, label="False positive")
-    scatter!(fn, markersize=3, label="False negative")
+    xlabel=latexstring("\$ \\tilde{d}(\\tilde{y}, \\tilde{y}_{obs}) \$"), ylabel=latexstring("\$ d(y,y_{obs}) \$"), labelfontsize=10)
+    scatter!(match, markersize=3, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(fp, markersize=5, label="False positive")
+    scatter!(fn, markersize=5, label="False negative")
     vline!([epsilons[1]], linestyle=:dash, color=[:black], label="")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 end
@@ -171,11 +171,11 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, pa
     fn = [(p.k[par_n], p.dist[2]) for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
 
     # Compare distance by parameter
-    plot(; title="Distance from data: by "*par_name, titlefontsize=10, grid=:none, legend=:none,
-    xlabel=par_name, ylabel=L"d(y,y_{obs})", labelfontsize=8)
-    scatter!(match, markersize=2, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=3, label="False positive")
-    scatter!(fn, markersize=3, label="False negative")
+    plot(; title="Distance from data: by "*par_name, titlefontsize=12, grid=:none, legend=:none,
+    xlabel=par_name, ylabel=L"d(y,y_{obs})", labelfontsize=10)
+    scatter!(match, markersize=3, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(fp, markersize=5, label="False positive")
+    scatter!(fn, markersize=5, label="False negative")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 
 end
