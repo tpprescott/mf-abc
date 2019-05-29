@@ -318,7 +318,7 @@ end
 using DelimitedFiles
 
 function write_cloud(c::Array, name::String)
-    open(name, "w") do io
+    open(name*".bm", "w") do io
         writedlm(io, c)
     end
     return nothing
@@ -343,9 +343,9 @@ end
 
 function MakeBenchmarkCloud(indir::String)::BenchmarkCloud
 # Read a previously simulated Benchmark Cloud
-    k = readdlm(indir*"/k")
-    dist = readdlm(indir*"/dist")
-    cost = readdlm(indir*"/cost")
+    k = readdlm(indir*"/k.bm")
+    dist = readdlm(indir*"/dist.bm")
+    cost = readdlm(indir*"/cost.bm")
     n = size(k,1)
     
     bm = BenchmarkCloud(undef, n)
@@ -356,12 +356,12 @@ function MakeBenchmarkCloud(indir::String)::BenchmarkCloud
 end
 
 function MakeMFABCCloud(indir::String)::MFABCCloud
-    N = Integer.(readdlm(indir*"/p/N"))
-    k = readdlm(indir*"/p/k")
-    dist = readdlm(indir*"/p/dist")
-    cost = readdlm(indir*"/p/cost")
-    eta = readdlm(indir*"/eta")
-    w = readdlm(indir*"/w")
+    N = Integer.(readdlm(indir*"/p/N.bm"))
+    k = readdlm(indir*"/p/k.bm")
+    dist = readdlm(indir*"/p/dist.bm")
+    cost = readdlm(indir*"/p/cost.bm")
+    eta = readdlm(indir*"/eta.bm")
+    w = readdlm(indir*"/w.bm")
 
     n = size(k,1)
     mf = MFABCCloud(undef, n)
