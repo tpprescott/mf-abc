@@ -3,7 +3,7 @@ using StatsBase, Statistics
 using Random
 
 export estimate_mu, ESS
-export compare_efficiencies, view_distances, observed_variances, efficiency_histogram
+export compare_efficiencies, view_distances, observed_variances, efficiency_histogram, plot_eta_estimates
 
 ######### Helper functions
 
@@ -254,4 +254,24 @@ function efficiency_histogram(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     titlefontsize=12)
     histogram!(efficiencies, bins=20)
     vline!([mean(efficiencies)], color=[:red], label="", linewidth=3.0)
+end
+
+function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
+    eta_real, phi_mf = get_eta(bm, epsilons, method=method)
+    eta_estimates = [get_eta(cld, epsilons; method=method, kwargs...)[1] for cld in cloud_set]
+    scatter(eta_estimates, xlim=(0,1), ylim=(0,1),label="Estimates")
+    scatter!(eta_real, label="Benchmark")
+    
+    grd = 0:0.01:1
+    sp = sample_properties(bm, epsilons)
+    phi_plot((x,y)) = phi((x,y), sp...)
+
+    contour!(collect(grd),collect(grd),(x,y)->1/phi_plot((x,y)),
+    aspect_ratio=:equal,
+    levels = (1/phi_mf).*[0.6, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
+    c=cgrad(:grays_r),
+    linewidth=1,
+    linestyle=:dot,
+    label=[],
+    colorbar=:none)
 end
