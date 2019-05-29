@@ -1,5 +1,6 @@
 export MFABC, Particle, Cloud, BenchmarkCloud, MFABCParticle, MFABCCloud
-export get_eta, phi, MakeMFABCCloud, MakeBenchmarkCloud
+export get_eta, phi, MakeMFABCCloud, MakeBenchmarkCloud, cost, length
+export write_cloud
 
 ##### Everything below assumes exactly two fidelities: 
 # Future work will adapt methodology to a true multifidelity approach.
@@ -25,6 +26,18 @@ BenchmarkCloud = Array{Particle{2}, 1}
 MFABCCloud = Array{MFABCParticle, 1}
 Cloud = Union{BenchmarkCloud, MFABCCloud}
 
+import Base.length
+length(p::Particle) = length(p.cost)
+length(pp::MFABCParticle) = length(pp.p)
+length(c::Cloud, i::Integer) = length(filter(p->(length(p)==i), c))
+cost(p::Particle) = sum(p.cost)
+cost(p::Particle, i::Integer) = (i<=length(p) ? p.cost[i] : 0)
+cost(pp::MFABCParticle) = cost(pp.p)
+cost(pp::MFABCParticle, i) = cost(pp.p, i)
+cost(c::Cloud) = sum(cost.(c))
+cost(c::Cloud, i) = sum(cost.(c, i))
+
+
 ######## Running simulations: benchmark particles ignore MFABC
 function BenchmarkParticle(mfabc::MFABC, i::Int64=1)::Particle{2}
    
@@ -44,9 +57,9 @@ function MakeBenchmarkCloud(mfabc::MFABC, N::Int64)::BenchmarkCloud
         return map(i->BenchmarkParticle(mfabc,i), 1:N)
     end
 end
-function MakeBenchmarkCloud(mfabc::MFABC, N::Int64, outdir::String)::BenchmarkCloud
+function MakeBenchmarkCloud(mfabc::MFABC, N::Int64, fn::String)::BenchmarkCloud
     output = MakeBenchmarkCloud(mfabc, N)
-    write_cloud(output, outdir)
+    write_cloud(output, fn)
     return output
 end
 
@@ -150,7 +163,7 @@ function MakeMFABCCloud(mfabc::MFABC, s::BenchmarkCloud, epsilons::Tuple{Float64
         end
     elseif haskey(kd, :budget)
         b = Float64(kd[:budget])
-        run_cost = sum([sum(p.cost) for p in s])
+        run_cost = cost(s)
         while run_cost<b
             etas = get_eta(cloud, epsilons; method=method, kwargs...)[1]
             pp, c = MFABCParticle(mfabc, epsilons, etas)
@@ -283,7 +296,7 @@ function get_eta(p_tp::Float64, p_fp::Float64, p_fn::Float64, ct::Float64, c_p::
     elseif method=="er"
         return (1.0, eta_2_bar)
     elseif method=="ed"
-        eta = sqrt((ct*(p_fp+p_fn))/(R0*(c_p+c_n)))
+        eta = minimum([1.0, sqrt((ct*(p_fp+p_fn))/(R0*(c_p+c_n)))])
         return (eta, eta)
     else
         return (1.0, 1.0)

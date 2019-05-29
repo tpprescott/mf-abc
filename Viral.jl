@@ -52,18 +52,18 @@ Random.seed!(123)
 t_pop, x_pop = simulate(gm, pop_size) # Simulate the nominal model with a fixed seed
 Random.seed!()
 
+infected_threshold = 3
+derivative_horizon = 30.0
+
+viral_count(x) = x[4,end]
+infected(x) = (viral_count(x)>infected_threshold)
+viral_output(x,t) = (viral_count(x) - x[4,searchsortedfirst(t, T-derivative_horizon)])/derivative_horizon
+infection_time(x,t) = (infected(x) && t[searchsortedfirst(x[4,:], infected_threshold)])
+
 function summary_statistics(t_pop::Array{Times,1}, x_pop::Array{States,1})
-    
-    infected_threshold = 3
-    derivative_horizon = 30.0
-
-    infected = [x[4,end]>infected_threshold for x in x_pop]
-    viral_count = [x[4,end] for (x,inf_flag) in zip(x_pop, infected) if inf_flag]    
-    viral_output = [(x[4,end] - x[4,findlast(t.<T-derivative_horizon)])/derivative_horizon for (t, x, inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
-    infection_time =  [t[findfirst(x[4,:].>infected_threshold)] for (t,x,inf_flag) in zip(t_pop, x_pop, infected) if inf_flag]
-
-    if .|(infected...)
-        return mean(infected), mean(viral_count), mean(viral_output), mean(infection_time)
+    inf_flag = infected.(x_pop)
+    if mean(inf_flag)>0
+        return mean(inf_flag), mean(viral_count.(x_pop)[inf_flag]), mean(viral_output.(x_pop, t_pop)[inf_flag]), mean(infection_time.(x_pop,t_pop)[inf_flag])
     else
         return 0.0, Inf64, Inf64, Inf64
     end

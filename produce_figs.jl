@@ -34,7 +34,8 @@ end
 ####################################
 
 using Plots, StatsPlots, KernelDensity, LaTeXStrings, Printf
-pyplot()
+f(i) = Plots.font("serif",i...)
+pyplot(titlefont=f(12), guidefont=f(9), legendfont=f(9), xtickfont=f(8), ytickfont=f(8))
 
 
 function get_efficiencies(bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, size_samples::Int64, eta_vec::Array{Tuple{Float64,Float64},1})
@@ -71,6 +72,8 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     str_vec = ["Early Accept/Reject", "Early Rejection", "Early Decision", "Rejection Sampling", "+/+", "-/+", "+/-", "-/-"]
     eta_vec = [eta_mf, eta_er, eta_ed, eta_abc, eta_pp, eta_mp, eta_pm, eta_mm]
     phi_vec = [phi_mf, phi_er, phi_ed, phi_abc, phi_pp, phi_mp, phi_pm, phi_mm]
+    offset_vec = [(0.03,0.01),(-0.02,0.01),(0.02,0.03),(-0.02,0.00),(0.02,0.02),(0.02,0.02),(0.02,0.02),(0.02,0.02)]
+    position_vec = [:left,:right,:left,:right,:left,:left,:left,:left]
     I = sortperm(phi_vec)
 
     if output=="plot"
@@ -81,7 +84,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
             xtickfontsize=10,
             yticks=[],
             xgrid=false,
-            legend=(0.7,0.25),
+            #legend=(0.7,0.25),
             legendfontsize=11,
             title="Distribution of Efficiency Across Multiple Realisations",
             titlefontsize=12)
@@ -119,31 +122,34 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     
     elseif output=="theory"
         
-        plot(color_palette=:darkrainbow, legend=:none, grid=:none,
-            xlabel="\\eta_1",
-            ylabel="\\eta_2",
+        fig = plot(color_palette=:darkrainbow, legend=:none, grid=:none,
+            xlabel=L"\eta_1",
+            ylabel=L"\eta_2",
             labelfontsize=10,
             title="Continuation Probabilities and Efficiency Landscape",
             titlefontsize=11)
         for i in I
-            scatter!(eta_vec[i], series_annotations=text.([" "*str_vec[i]],:left,8))
-        end
-
+            scatter!(eta_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
+        end        
+        
         grd = 0:0.01:1
         plot!(collect(grd), x->x, color=[:black], linestyle=:dash, label=[])
         plot!(ones(size(grd)),collect(grd), color=[:black], linestyle=:dash, label=[])
 
         sp = sample_properties(bm, epsilons)
         phi_plot((x,y)) = phi((x,y), sp...)
+
         contour!(collect(grd),collect(grd),(x,y)->1/phi_plot((x,y)),
         aspect_ratio=:equal,
-        levels = (1/phi_mf).*[0.99, 0.95, 0.9, 0.85, 0.8, 0.75, 0.6],
-        color=[:grey],
+        levels = (1/phi_mf).*[0.6, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
+        c=cgrad(:grays_r),
+        linewidth=1,
         linestyle=:dot,
         label=[],
         colorbar=:none)
-        
-    
+
+        return fig
+
     else
         return collect(zip((str_vec[I], eta_vec[I], phi_vec[I], efficiencies[:,I])...))
     end
@@ -156,11 +162,11 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64})
     fn = [p.dist for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
     # Compare low and high fidelity
     plot(; title="Distance from data: low and high fidelity simulations", titlefontsize=12, 
-    aspect_ratio=:equal, grid=:none, legend=(0.3,0.9),
+    aspect_ratio=:equal, grid=:none,
     xlabel=latexstring("\$ \\tilde{d}(\\tilde{y}, \\tilde{y}_{obs}) \$"), ylabel=latexstring("\$ d(y,y_{obs}) \$"), labelfontsize=10)
-    scatter!(match, markersize=3, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=5, label="False positive")
-    scatter!(fn, markersize=5, label="False negative")
+    scatter!(match, markersize=1, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(fp, markersize=2, label="False positive")
+    scatter!(fn, markersize=2, label="False negative")
     vline!([epsilons[1]], linestyle=:dash, color=[:black], label="")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 end
@@ -171,11 +177,11 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, pa
     fn = [(p.k[par_n], p.dist[2]) for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
 
     # Compare distance by parameter
-    plot(; title="Distance from data: by "*par_name, titlefontsize=12, grid=:none, legend=:none,
+    plot(; title="Distance from data: by parameter", titlefontsize=12, grid=:none, legend=:none,
     xlabel=par_name, ylabel=L"d(y,y_{obs})", labelfontsize=10)
-    scatter!(match, markersize=3, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=5, label="False positive")
-    scatter!(fn, markersize=5, label="False negative")
+    scatter!(match, markersize=1, markerstrokewidth=0, label="Matching estimator values")
+    scatter!(fp, markersize=2, label="False positive")
+    scatter!(fn, markersize=2, label="False negative")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 
 end
@@ -246,6 +252,6 @@ function efficiency_histogram(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     legend=:none,
     title=title_dictionary[method],
     titlefontsize=12)
-    histogram!(efficiencies)
+    histogram!(efficiencies, bins=20)
     vline!([mean(efficiencies)], color=[:red], label="", linewidth=3.0)
 end

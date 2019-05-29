@@ -15,7 +15,7 @@ Best to begin Julia with parallel workers set up using:
 for 10 parallel workers, for example.
 =#
 # MakeBenchmarkCloud(Repressilator.mf_prob, 5000000, "./repressilator/output/")
-# MakeBenchmarkCloud(Viral.mf_prob, 5000000, "./repressilator/output/")
+# MakeBenchmarkCloud(Viral.mf_prob, 100000, "./repressilator/output/")
 
 #=
 ## SET UP
