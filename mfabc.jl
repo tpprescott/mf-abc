@@ -316,27 +316,58 @@ end
 ######## Read/write (benchmark) clouds
 
 using DelimitedFiles
-function write_cloud(cld::BenchmarkCloud, outdir::String="./output/") where {T}
-    mkpath(outdir)
-    for fn in fieldnames(Particle)
-        cloud_field = [getfield(particle, fn) for particle in cld]
-        writedlm(outdir*string(fn)*".txt", cloud_field)
+
+function write_cloud(c::Array, name::String)
+    open(name, "w") do io
+        writedlm(io, c)
     end
+    return nothing
+end
+function write_cloud(c::Array{<:Particle,1}, name::String)
+    mkpath(name)
+    for fieldname in fieldnames(Particle)
+        cloud_field = [getfield(p, fieldname) for p in c]
+        write_cloud(cloud_field, name*"/"*string(fieldname))
+    end
+    return nothing
+end
+function write_cloud(c::MFABCCloud, name::String)
+    for fieldname in fieldnames(MFABCParticle)
+        cloud_field = [getfield(mfp, fieldname) for mfp in c]
+        write_cloud(cloud_field, name*"/"*string(fieldname))
+    end
+    N = length.(c)
+    write_cloud(N, name*"/p/N")
+    return nothing
 end
 
-function MakeBenchmarkCloud(indir::String="./output/")::BenchmarkCloud
+function MakeBenchmarkCloud(indir::String)::BenchmarkCloud
 # Read a previously simulated Benchmark Cloud
-    fn_list = fieldnames(Particle{2})
-    input = map(fn->readdlm(indir*string(fn)*".txt"), fn_list)
-    n = size(input[1],1)
-    cld = BenchmarkCloud(undef, n)
+    k = readdlm(indir*"/k")
+    dist = readdlm(indir*"/dist")
+    cost = readdlm(indir*"/cost")
+    n = size(k,1)
+    
+    bm = BenchmarkCloud(undef, n)
     for i in 1:n
-        cld[i] = Particle{2}(Parameters(input[1][i,:]), NTuple{2,Float64}(input[2][i,:]), NTuple{2,Float64}(input[3][i,:]))
+        bm[i] = Particle{2}(Parameters(k[i,:]), NTuple{2,Float64}(dist[i,:]), NTuple{2,Float64}(cost[i,:]))
     end
-    return cld
+    return bm
 end
 
-function MakeMFABCCloud(indir::String="./output/", epsilons::Tuple{Float64, Float64}=(0.0,0.0))::MFABCCloud
-    s = MakeBenchmarkCloud(indir)
-    return MakeMFABCCloud(s,epsilons,(1.0,1.0))
+function MakeMFABCCloud(indir::String)::MFABCCloud
+    N = Integer.(readdlm(indir*"/p/N"))
+    k = readdlm(indir*"/p/k")
+    dist = readdlm(indir*"/p/dist")
+    cost = readdlm(indir*"/p/cost")
+    eta = readdlm(indir*"/eta")
+    w = readdlm(indir*"/w")
+
+    n = size(k,1)
+    mf = MFABCCloud(undef, n)
+    for i in 1:n
+        pp = Particle{N[i]}(Parameters(k[i,:]), NTuple{N[i],Float64}(dist[i,1:N[i]]), NTuple{N[i],Float64}(cost[i,1:N[i]]))
+        mf[i] = MFABCParticle(pp, eta[i], w[i])
+    end
+    return mf
 end
