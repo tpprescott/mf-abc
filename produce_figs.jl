@@ -1,5 +1,5 @@
 using DelimitedFiles
-using StatsBase, Statistics
+using StatsBase, Statistics, StatsPlots
 using Random
 
 export estimate_mu, ESS
@@ -73,11 +73,13 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     eta_vec = [eta_mf, eta_er, eta_ed, eta_abc, eta_pp, eta_mp, eta_pm, eta_mm]
     phi_vec = [phi_mf, phi_er, phi_ed, phi_abc, phi_pp, phi_mp, phi_pm, phi_mm]
     offset_vec = [(0.03,0.01),(-0.02,0.01),(0.02,0.03),(-0.02,0.00),(0.02,0.02),(0.02,0.02),(0.02,0.02),(0.02,0.02)]
+    alpha_vec = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
     position_vec = [:left,:right,:left,:right,:left,:left,:left,:left]
     I = sortperm(phi_vec)
 
     if output=="plot"
         efficiencies = get_efficiencies(bm, epsilons, size_samples, eta_vec)
+        #=         
         fig = plot(color_palette=:darkrainbow,
             thickness_scaling=1,
             xlabel="Effective samples per second",
@@ -102,7 +104,19 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
                 )
             end
         end
-        
+        =#
+        fig = plot(color_palette=:darkrainbow,
+        thickness_scaling=1,
+        ylabel="Effective samples per second",
+        ytickfontsize=10,
+        xticks=[],
+        ygrid=false,
+        #legend=(0.7,0.25),
+        legendfontsize=11,
+        title="Distribution of Efficiency Across Multiple Realisations",
+        titlefontsize=12)
+        boxplot!(efficiencies[:,I], label=hcat(str_vec[I]...), alpha=hcat(alpha_vec[I]...))
+    
         pc_bigger_than(eff1,eff2) = count(F1>F2 for F1 in eff1 for F2 in eff2)/(length(eff1)*length(eff2))
         num_rows = size(efficiencies,2)-1
         tab = Array{Tuple{String, String, Float64},2}(undef,num_rows,num_rows)
@@ -274,4 +288,10 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
     linestyle=:dot,
     label=[],
     colorbar=:none)
+end
+
+function plot_apost_efficiencies(inc_set::Array{<:Cloud,1}, bm_set::Array{<:Cloud,1})
+    eff(set) = ESS.(set)./cost.(set)
+    boxplot([eff(bm_set), eff(inc_set)], label=["Benchmark" "Adaptive"], xticks=[], ylabel="ESS per second", 
+        title="Distribution of efficiencies across multiple realisations")
 end
