@@ -3,7 +3,7 @@ using StatsBase, Statistics, StatsPlots
 using Random
 
 export estimate_mu, ESS
-export compare_efficiencies, view_distances, observed_variances, efficiency_histogram, plot_eta_estimates
+export compare_efficiencies, view_distances, observed_variances, plot_eta_estimates, plot_apost_efficiencies
 
 ######### Helper functions
 
@@ -73,7 +73,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
     eta_vec = [eta_mf, eta_er, eta_ed, eta_abc, eta_pp, eta_mp, eta_pm, eta_mm]
     phi_vec = [phi_mf, phi_er, phi_ed, phi_abc, phi_pp, phi_mp, phi_pm, phi_mm]
     offset_vec = [(0.03,0.01),(-0.02,0.01),(0.02,0.03),(-0.02,0.00),(0.02,0.02),(0.02,0.02),(0.02,0.02),(0.02,0.02)]
-    alpha_vec = [1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]
+    alpha_vec = [1.0, 1.0, 1.0, 1.0, 0.3, 0.3, 0.3, 0.3]
     position_vec = [:left,:right,:left,:right,:left,:left,:left,:left]
     I = sortperm(phi_vec)
 
@@ -143,7 +143,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
             title="Continuation Probabilities and Efficiency Landscape",
             titlefontsize=11)
         for i in I
-            scatter!(eta_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
+            scatter!(eta_vec[i], alpha=alpha_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
         end        
         
         grd = 0:0.01:1
@@ -175,12 +175,12 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64})
     fp = [p.dist for p in s if ((p.dist[1] < epsilons[1]) & (p.dist[2] >= epsilons[2])) ]
     fn = [p.dist for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
     # Compare low and high fidelity
-    plot(; title="Distance from data: low and high fidelity simulations", titlefontsize=12, 
+    plot(; title="Distance from data: multifidelity", titlefontsize=12, 
     aspect_ratio=:equal, grid=:none,
     xlabel=latexstring("\$ \\tilde{d}(\\tilde{y}, \\tilde{y}_{obs}) \$"), ylabel=latexstring("\$ d(y,y_{obs}) \$"), labelfontsize=10)
-    scatter!(match, markersize=1, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=2, label="False positive")
-    scatter!(fn, markersize=2, label="False negative")
+    scatter!(match, markersize=1.5, markerstrokewidth=0, alpha=0.6, label="Matching estimator values")
+    scatter!(fp, markersize=3, markerstrokewidth=0, label="False positive")
+    scatter!(fn, markersize=3, markerstrokewidth=0, label="False negative")
     vline!([epsilons[1]], linestyle=:dash, color=[:black], label="")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 end
@@ -193,9 +193,9 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, pa
     # Compare distance by parameter
     plot(; title="Distance from data: by parameter", titlefontsize=12, grid=:none, legend=:none,
     xlabel=par_name, ylabel=L"d(y,y_{obs})", labelfontsize=10)
-    scatter!(match, markersize=1, markerstrokewidth=0, label="Matching estimator values")
-    scatter!(fp, markersize=2, label="False positive")
-    scatter!(fn, markersize=2, label="False negative")
+    scatter!(match, markersize=1.5, markerstrokewidth=0, alpha=0.6, label="Matching estimator values")
+    scatter!(fp, markersize=3, markerstrokewidth=0, label="False positive")
+    scatter!(fn, markersize=3, markerstrokewidth=0, label="False negative")
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 
 end
@@ -254,26 +254,18 @@ function observed_variances(bm::BenchmarkCloud, size_samples::Int64, epsilons::T
     return vartab, phitab, etatab
 end
 
-function efficiency_histogram(bm::BenchmarkCloud, size_samples::Int64, epsilons::Tuple{Float64, Float64}; method::String="mf")
-    etas = get_eta(bm, epsilons, method=method)[1]
-    efficiencies = vec(get_efficiencies(bm, epsilons, size_samples, [etas]))
-
-    title_dictionary = Dict("mf"=>"Early Accept/Reject", "ed"=>"Early Decision", "er"=>"Early Rejection")
-    fig = plot(xlabel="Effective samples per second",
-    xtickfontsize=10,
-    yticks=[],
-    xgrid=false,
-    legend=:none,
-    title=title_dictionary[method],
-    titlefontsize=12)
-    histogram!(efficiencies, bins=20)
-    vline!([mean(efficiencies)], color=[:red], label="", linewidth=3.0)
-end
-
 function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
     eta_real, phi_mf = get_eta(bm, epsilons, method=method)
     eta_estimates = [get_eta(cld, epsilons; method=method, kwargs...)[1] for cld in cloud_set]
-    scatter(eta_estimates, xlim=(0,1), ylim=(0,1),label="Estimates")
+    
+    fig = plot(legend=:none, grid=:none,
+    xlabel=L"\eta_1",
+    ylabel=L"\eta_2",
+    labelfontsize=10,
+    title="Continuation Probabilities and Efficiency Landscape",
+    titlefontsize=11)
+    
+    scatter!(eta_estimates, xlim=(0,1), ylim=(0,1),label="Estimates")
     scatter!(eta_real, label="Benchmark")
     
     grd = 0:0.01:1
@@ -291,7 +283,19 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
 end
 
 function plot_apost_efficiencies(inc_set::Array{<:Cloud,1}, bm_set::Array{<:Cloud,1})
+    
     eff(set) = ESS.(set)./cost.(set)
-    boxplot([eff(bm_set), eff(inc_set)], label=["Benchmark" "Adaptive"], xticks=[], ylabel="ESS per second", 
-        title="Distribution of efficiencies across multiple realisations")
+
+    fig = plot(color_palette=:darkrainbow,
+    thickness_scaling=1,
+    ylabel="Effective samples per second",
+    ytickfontsize=10,
+    xticks=[],
+    ygrid=false,
+    #legend=(0.7,0.25),
+    legendfontsize=11,
+    title="Distribution of Efficiency Across Multiple Realisations",
+    titlefontsize=12)
+    
+    boxplot!([eff(bm_set), eff(inc_set)], label=["Benchmark" "Adaptive"])
 end
