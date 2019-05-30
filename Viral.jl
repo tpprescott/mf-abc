@@ -53,36 +53,33 @@ t_pop, x_pop = simulate(gm, pop_size) # Simulate the nominal model with a fixed 
 Random.seed!()
 
 infected_threshold = 3
-derivative_horizon = 30.0
 
 viral_count(x) = x[4,end]
 infected(x) = (viral_count(x)>infected_threshold)
-viral_output(x,t) = (viral_count(x) - x[4,searchsortedfirst(t, T-derivative_horizon)])/derivative_horizon
-infection_time(x,t) = (infected(x) && t[searchsortedfirst(x[4,:], infected_threshold)])
+infection_time(x,t) = (infected(x) && t[searchsortedfirst(x[4,:], infected_threshold)]/T)
 
 function summary_statistics(t_pop::Array{Times,1}, x_pop::Array{States,1})
     inf_flag = infected.(x_pop)
     if mean(inf_flag)>0
-        return mean(inf_flag), mean(viral_count.(x_pop)[inf_flag]), mean(viral_output.(x_pop, t_pop)[inf_flag]), mean(infection_time.(x_pop,t_pop)[inf_flag])
+        return mean(inf_flag), log(2,mean(viral_count.(x_pop)[inf_flag])), mean(infection_time.(x_pop,t_pop)[inf_flag])
     else
-        return 0.0, Inf64, Inf64, Inf64
+        return 0.0, Inf64, Inf64
     end
 end
 yo = summary_statistics(t_pop, x_pop)
 
-function distance(pc_infected::Float64, viral_count::Float64, viral_output::Float64, infection_time::Float64)
-    return sqrt((pc_infected - yo[1])^2 + ((viral_count/yo[2])-1)^2 + ((viral_output/yo[3])-1)^2 + ((infection_time/yo[4])-1)^2)
-end
+distance(y1, y2) = norm(y1.-y2)
+distance(y) = distance(y, yo)
 
 function lofi(k::Parameters)
     t_pop, x_pop, pp_pop = simulate(hm, k, pop_size)
-    return distance(summary_statistics(t_pop, x_pop)...), pp_pop
+    return distance(summary_statistics(t_pop, x_pop)), pp_pop
 end
 
 # The following hifi *couples* low fidelity and high fidelity simulations:
 function hifi(k::Parameters, coupling_input::Array{PP,1})
     t_pop, x_pop = complete(hm, k, coupling_input)
-    return distance(summary_statistics(t_pop, x_pop)...)
+    return distance(summary_statistics(t_pop, x_pop))
 end
 
 # # This hifi version would produce independent (uncoupled) high fidelity simulations:
