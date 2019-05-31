@@ -215,29 +215,6 @@ struct HybridModel <: Simulatable
     deterministic_step::Function    # The deterministic reaction wait time and result
 end
 
-function hybrid_step!(t_traj::Array{Float64,1}, x::Array{Float64,1}, d::Array{Float64,1}, pp_set::Array{Array{Float64,1},1}, speeds::Array{Float64,1}, hm::HybridModel, k::Parameters)
-    
-    tau_det, nu_j_det = hm.deterministic_step(t_traj[end], x, k)    
-    a0 = sum(speeds)
-    if a0>0
-        tau_sto = rand(Exponential(1/a0))
-    else
-        tau_sto = Inf64
-    end
-
-    if tau_det <= tau_sto
-        append!(t_traj, t_traj[end]+tau_det)
-        x[:] += nu_j_det
-        d[:] += tau_det*speeds
-    else
-        append!(t_traj, t_traj[end]+tau_sto)
-        j = rand(Categorical(speeds./a0))
-        x[:] += hm.nu[:,j]
-        d[:] += tau_sto*speeds
-        append!(pp_set[j],d[j])
-    end
-end
-
 function simulate(hm::HybridModel, k::Parameters)::Tuple{Times, States, Coupling}
 
     (n_x, n_r) = size(hm.nu)
@@ -245,19 +222,44 @@ function simulate(hm::HybridModel, k::Parameters)::Tuple{Times, States, Coupling
     t_traj::Array{Float64,1} = [0.0]
     x_traj::Array{Float64,1} = copy(hm.x0)
     x::Array{Float64,1} = copy(hm.x0)
+    t::Float64 = 0.0
     
-    pp_set=[Float64[] for i in 1:n_r]
     d::Array{Float64,1} = zeros(n_r)
-    speeds::Array{Float64,1} = zeros(n_r)
+    d_next_event::Array{Float64,1} = randexp(n_r)
+    pp_set::Array{Array{Float64,1},1} = [[d_i] for d_i in d_next_event]
     
-    while t_traj[end] < hm.T
-        hm.reduced_propensity!(speeds, x, k)
-        hybrid_step!(t_traj, x, d, pp_set, speeds, hm, k)
-        append!(x_traj,x)
+    speeds::Array{Float64,1} = zeros(n_r)
+    while t<hm.T
+        hm.reduced_propensity!(speeds, x, k) # Calculate speeds (will be zero along deterministic reactions)
+        
+        tau_det, nu_j_det = hm.deterministic_step(t, x, k) # time until next deterministic event
+        tau_sto, j_sto = findmin((d_next_event-d)./speeds)
+        
+        if tau_det <= tau_sto
+            t += tau_det
+            x += nu_j_det
+            d += tau_det*speeds
+        else
+            t += tau_sto
+            x += hm.nu[:,j_sto]
+            d += tau_sto*speeds
+            d_next_event[j_sto] += randexp()
+            push!(pp_set[j_sto], d_next_event[j_sto])
+        end
+        
+        if t<=hm.T
+            push!(t_traj, t)
+            append!(x_traj, x)
+        else
+            push!(t_traj, hm.T)
+            append!(x_traj, x_traj[(end-n_x+1):end])
+            n_t = length(t_traj)
+            return t_traj, reshape(x_traj,(n_x, n_t)), PP(pp_set)
+        end
     end
 
-    n_t = length(t_traj)
-    return t_traj, reshape(x_traj,(n_x, n_t)), PP(pp_set)
+    return t_traj, reshape(x_traj,(n_x, length(t_traj))), PP(pp_set)
+
 end
 
 ######## Coupling methods, based on
