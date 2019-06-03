@@ -3,12 +3,13 @@ using Distributed
 
 bm = MakeBenchmarkCloud("viral/output")
 idx = Iterators.partition(1:length(bm), 1000)
+epsilons = (0.25, 0.25)
 println("--- Loaded benchmark")
 
-pmap(i->MakeMFABCCloud(Viral.mf_prob, bm[[i]], (0.4,0.4), method="mf", lower_eta=0.1, budget=2*cost(bm[[i]])), 1:nworkers());
+pmap(i->MakeMFABCCloud(Viral.mf_prob, bm[[i]], epsilons, method="mf", lower_eta=0.01, budget=1.01*cost(bm[[i]])), 1:nworkers());
 println("--- Good to go")
 
-mfabc_set = pmap(i->MakeMFABCCloud(Viral.mf_prob, bm[i], (0.4,0.4), method="mf", lower_eta=0.1, budget=2*cost(bm[i])), idx)
+mfabc_set = pmap(i->MakeMFABCCloud(Viral.mf_prob, bm[i], epsilons, method="mf", lower_eta=0.01, budget=2*cost(bm[i])), idx)
 println("--- Completed extra simulations")
 println("--- Writing files")
 

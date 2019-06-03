@@ -37,6 +37,9 @@ cost(pp::MFABCParticle, i) = cost(pp.p, i)
 cost(c::Cloud) = sum(cost.(c))
 cost(c::Cloud, i) = sum(cost.(c, i))
 
+accept(p::Particle, epsilon::Float64) = (p.dist[2]<=epsilon)
+accept_rate(c::BenchmarkCloud, epsilon::Float64) = count(p->accept(p,epsilon), c)/length(c)
+
 
 ######## Running simulations: benchmark particles ignore MFABC
 function BenchmarkParticle(mfabc::MFABC, i::Int64=1)::Particle{2}

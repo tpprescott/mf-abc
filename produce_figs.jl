@@ -112,8 +112,8 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
         xticks=[],
         ygrid=false,
         #legend=(0.7,0.25),
-        legendfontsize=11,
-        title="Distribution of Efficiency Across Multiple Realisations",
+        legendfontsize=10,
+        title="Observed Distribution of Efficiency",
         titlefontsize=12)
         boxplot!(efficiencies[:,I], label=hcat(str_vec[I]...), alpha=hcat(alpha_vec[I]...))
     
@@ -140,7 +140,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
             xlabel=L"\eta_1",
             ylabel=L"\eta_2",
             labelfontsize=10,
-            title="Continuation Probabilities and Efficiency Landscape",
+            title="Continuation Probabilities and Efficiency",
             titlefontsize=11)
         for i in I
             scatter!(eta_vec[i], alpha=alpha_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
@@ -199,6 +199,35 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, pa
     hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
 
 end
+function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, inset_limits::Tuple{Float64,Float64})
+
+    match = [p.dist for p in s if !xor((p.dist .< epsilons)...)]
+    fp = [p.dist for p in s if ((p.dist[1] < epsilons[1]) & (p.dist[2] >= epsilons[2])) ]
+    fn = [p.dist for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
+    # Compare low and high fidelity
+    plot(; title="Distance from data: multifidelity", titlefontsize=12, 
+    aspect_ratio=:equal, grid=:none,
+    xlabel=latexstring("\$ \\tilde{d}(\\tilde{y}, \\tilde{y}_{obs}) \$"), ylabel=latexstring("\$ d(y,y_{obs}) \$"), labelfontsize=10)
+    
+    plot!(; inset_subplots=(1,bbox(0.15,0.15,0.3,0.3,:bottom,:right)))
+
+    scatter!(match, markersize=1.5, markerstrokewidth=0, alpha=0.6, label="Matching estimator values", subplot=1)
+    scatter!(fp, markersize=3, markerstrokewidth=0, label="False positive", subplot=1)
+    scatter!(fn, markersize=3, markerstrokewidth=0, label="False negative", subplot=1)
+
+    scatter!(match, markersize=2.5, markerstrokewidth=0, alpha=0.6, label="Matching estimator values", subplot=2)
+    scatter!(fp, markersize=4, markerstrokewidth=0, label="False positive", subplot=2)
+    scatter!(fn, markersize=4, markerstrokewidth=0, label="False negative", subplot=2)
+
+    vline!([epsilons[1]], linestyle=:dash, color=[:black], label="", subplot=1)
+    hline!([epsilons[2]], linestyle=:dash, color=[:black], label="", subplot=1)
+
+    vline!([epsilons[1]], linestyle=:dash, color=[:black], label="", subplot=2)
+    hline!([epsilons[2]], linestyle=:dash, color=[:black], label="", subplot=2)
+
+    plot!(xlim=(0,inset_limits[1]), ylim=(0,inset_limits[2]), legend=:none, aspect_ratio=:equal, grid=:none, subplot=2, xticks=[epsilons[1]], yticks=[epsilons[2]], framestyle=:box)
+end
+
 
 function observed_variances(bm::BenchmarkCloud, size_samples::Int64, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budgets::Array{Float64,1}=[Inf64])
     method_list = ["abc", "er", "ed", "mf"]
