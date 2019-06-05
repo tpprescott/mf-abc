@@ -3,7 +3,7 @@ using StatsBase, Statistics, StatsPlots
 using Random
 
 export estimate_mu, ESS
-export compare_efficiencies, view_distances, observed_variances, plot_eta_estimates, plot_apost_efficiencies
+export compare_efficiencies, view_distances, variance_table, plot_eta_estimates, plot_apost_efficiencies
 
 ######### Helper functions
 
@@ -39,17 +39,11 @@ pyplot(titlefont=f(12), guidefont=f(9), legendfont=f(9), xtickfont=f(8), ytickfo
 
 
 function get_efficiencies(bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, size_samples::Int64, eta_vec::Array{Tuple{Float64,Float64},1})
-    Random.seed!(123)
     sample_idx = Iterators.partition(1:length(bm), size_samples)
-    efficiencies = zeros(length(sample_idx),length(eta_vec))
-    for (i,etas) in enumerate(eta_vec)
-        cld = MakeMFABCCloud(bm, epsilons, etas)
-        for (j,idx) in enumerate(sample_idx)
-            efficiencies[j,i] = efficiency(cld[idx])
-        end
-    end
+    Random.seed!(123)
+    cloud_set = [MakeMFABCCloud(bm[i], epsilons, etas) for (i,etas) in Iterators.product(sample_idx, eta_vec)]
     Random.seed!()
-    return efficiencies
+    return ESS.(cloud_set)./cost.(cloud_set)
 end
 
 function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons::Tuple{Float64, Float64};
@@ -115,7 +109,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
         legendfontsize=10,
         title="Observed Distribution of Efficiency",
         titlefontsize=12)
-        boxplot!(efficiencies[:,I], label=hcat(str_vec[I]...), alpha=hcat(alpha_vec[I]...))
+        violin!(efficiencies[:,I], label=hcat(str_vec[I]...), alpha=hcat(alpha_vec[I]...))
     
         pc_bigger_than(eff1,eff2) = count(F1>F2 for F1 in eff1 for F2 in eff2)/(length(eff1)*length(eff2))
         num_rows = size(efficiencies,2)-1
@@ -143,7 +137,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
             title="Continuation Probabilities and Efficiency",
             titlefontsize=11)
         for i in I
-            scatter!(eta_vec[i], alpha=alpha_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
+            scatter!(eta_vec[i], markersize=8, markerstrokewidth=0, alpha=alpha_vec[i], annotations=((eta_vec[i].+offset_vec[i])..., text(str_vec[i],f((8,position_vec[i])))))
         end        
         
         grd = 0:0.01:1
@@ -157,7 +151,7 @@ function compare_efficiencies(bm::BenchmarkCloud, size_samples::Int64, epsilons:
         aspect_ratio=:equal,
         levels = (1/phi_mf).*[0.6, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
         c=cgrad(:grays_r),
-        linewidth=1,
+        linewidth=0.6,
         linestyle=:dot,
         label=[],
         colorbar=:none)
@@ -229,58 +223,41 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, in
 end
 
 
-function observed_variances(bm::BenchmarkCloud, size_samples::Int64, epsilons::Tuple{Float64,Float64}, F::Array{Function,1}, budgets::Array{Float64,1}=[Inf64])
+function get_eta(bm::BenchmarkCloud, epsilons::Tuple{Float64,Float64}, F::Array{Function,1})
     method_list = ["abc", "er", "ed", "mf"]
-    vartab = Array{Array{Float64,1},2}(undef,length(F),length(method_list)+1)
-    phitab = Array{Float64,2}(undef,length(F),length(method_list)+1)
-    etatab = Array{Tuple{Float64,Float64},2}(undef,length(F),length(method_list)+1)
+ #   sample_idx = Iterators.partition(1:length(bm), size_samples)
+ #   bm_set = [bm[i] for i in sample_idx]
 
+    eta_phi_fun((f,m)) = get_eta(bm, epsilons, method=m, F=f)
+    eta_phi = map(eta_phi_fun, Iterators.product(F, method_list))
     ess_eta = get_eta(bm, epsilons, method="mf")[1]
-    sample_idx = Iterators.partition(1:length(bm), size_samples)
+    ess_phi = [phi(ess_eta, bm, epsilons, F=f) for f in F]
 
-    function budget_cloud(cloud::MFABCCloud, budget::Float64)::Int64
-        c=0
-        for (n,pp) in enumerate(cloud)
-            c += sum(pp.p.cost)
-            if c>budget
-                return n-1
-            end
-        end
-        return length(cloud)
+    eta_tab = hcat([x[1] for x in eta_phi], repeat([ess_eta], length(F)))
+    phi_tab = hcat([x[2] for x in eta_phi], ess_phi)
+
+    return eta_tab, phi_tab
+end
+
+function observed_variance(bm_set::Array{BenchmarkCloud,1}, epsilons::Tuple{Float64,Float64}, eta::Tuple{Float64,Float64}, budget::Float64, F::Function)
+    mf_set = [MakeMFABCCloud(bm_i, epsilons, eta, budget) for bm_i in bm_set]
+    return var(estimate_mu.(mf_set, F))
+end
+
+function variance_table(bm::BenchmarkCloud, sample_size::Integer, epsilons::Tuple{Float64, Float64}, eta_tab::Array{Tuple{Float64, Float64}}, Functions::Array{Function,1}, budget::Float64)
+    idx = Iterators.partition(1:length(bm), sample_size)
+    f_tab = repeat(Functions,1,size(eta_tab,2))
+    if size(f_tab)==size(eta_tab)
+        shuffle!(bm)
+        bm_set = [bm[i] for i in idx]
+        return [observed_variance(bm_set, epsilons, eta, budget, f) for (eta, f) in zip(eta_tab, f_tab)]
+    else
+        error("eta table doesn't match number of functions")
     end
-
-    Random.seed!(111)
-    mu = zeros(length(sample_idx),length(budgets))
-    for (i,fun) in enumerate(F)
-        for (j,mth) in enumerate(method_list)
-            vartab[i,j] = zeros(length(budgets))
-            etas, phitab[i,j] = get_eta(bm, epsilons, method=mth, F=fun)
-            for (k,idx) in enumerate(sample_idx)
-                cld = MakeMFABCCloud(bm[idx], epsilons, etas)
-                for (l,b) in enumerate(budgets)
-                    n = budget_cloud(cld, b)
-                    mu[k,l] = estimate_mu(cld[1:n], fun)
-                end
-            end
-            vartab[i,j] = vec(var(mu, dims=1))
-            etatab[i,j] = etas
-        end
-
-        # Additional method: repeat procedure for the eta used to maximise ESS (i.e. independently of F)
-        phitab[i,end] = phi(ess_eta, bm, epsilons, F=fun)
-        etatab[i,end] = ess_eta
-        vartab[i,end] = zeros(length(budgets))
-        for (k,idx) in enumerate(sample_idx)
-            cld = MakeMFABCCloud(bm[idx], epsilons, ess_eta)
-            for (l,b) in enumerate(budgets)
-                n = budget_cloud(cld, b)
-                mu[k,l] = estimate_mu(cld[1:n], fun)
-            end
-            vartab[i,end] = vec(var(mu,dims=1))
-        end
-    end
-    Random.seed!()
-    return vartab, phitab, etatab
+end
+function variance_table(bm::BenchmarkCloud, sample_size::Integer, epsilons::Tuple{Float64, Float64}, Functions::Array{Function,1}, budget::Float64)
+    eta_tab = get_eta(bm, epsilons, Functions)[1]
+    return variance_table(bm, sample_size, epsilons, eta_tab, Functions, budget)
 end
 
 function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
@@ -291,11 +268,11 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
     xlabel=L"\eta_1",
     ylabel=L"\eta_2",
     labelfontsize=10,
-    title="Continuation Probabilities and Efficiency Landscape",
+    title="Continuation Probabilities and Efficiency",
     titlefontsize=11)
     
-    scatter!(eta_estimates, xlim=(0,1), ylim=(0,1),label="Estimates")
-    scatter!(eta_real, label="Benchmark")
+    scatter!(eta_estimates, markersize=6, markerstrokewidth=0, xlim=(0,1), ylim=(0,1),label="Estimates")
+    scatter!(eta_real, markersize=6, markerstrokewidth=0, label="Benchmark")
     
     grd = 0:0.01:1
     sp = sample_properties(bm, epsilons)
@@ -305,7 +282,7 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
     aspect_ratio=:equal,
     levels = (1/phi_mf).*[0.6, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99],
     c=cgrad(:grays_r),
-    linewidth=1,
+    linewidth=0.6,
     linestyle=:dot,
     label=[],
     colorbar=:none)
@@ -323,8 +300,8 @@ function plot_apost_efficiencies(inc_set::Array{<:Cloud,1}, bm_set::Array{<:Clou
     ygrid=false,
     #legend=(0.7,0.25),
     legendfontsize=11,
-    title="Distribution of Efficiency Across Multiple Realisations",
+    title="Observed Distribution of Efficiency",
     titlefontsize=12)
     
-    boxplot!([eff(bm_set), eff(inc_set)], label=["Benchmark" "Adaptive"])
+    violin!([eff(inc_set), eff(bm_set)], label=["Small burn-in" "Rejection sampling"])
 end

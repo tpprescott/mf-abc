@@ -145,6 +145,13 @@ end
 function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})::MFABCCloud
     return map(p->MFABCParticle(p, epsilons, etas)[1], s) # First component is the particle (second is cost of particle)
 end
+function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::MFABCCloud
+    function truncate(cld, b, args...)
+        return cld[1:searchsortedlast(cumsum(cost.(cld, args...)), b)]
+    end
+    mf = MakeMFABCCloud(truncate(s,budget,1), epsilons, etas)
+    return truncate(mf, budget)
+end
 
 ## Unknown eta: need to take into account finding a good eta, potentially given a function to be estimated
 

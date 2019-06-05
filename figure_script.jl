@@ -1,7 +1,7 @@
 include("MultiFidelityABC.jl")
 mkpath("figures")
 
-using StatsPlots
+using StatsPlots, Random
 
 println("#### Repressilator")
 println("# Loading data")
@@ -20,7 +20,10 @@ fig2b, table1, latex_table1 = compare_efficiencies(bm, sample_size, epsilons, ou
 savefig(plot(fig2a, fig2b, layout=2, size=(1100,440)), "figures/fig2.pdf")
 
 println("# Table 2 and 3")
-variances, phis, etas = observed_variances(bm, sample_size, epsilons, Repressilator.F, [100.0, 200.0, 300.0])
+eta_tab, phi_tab = get_eta(bm, epsilons, Repressilator.F)
+Random.seed!(123)
+var_tab = variance_table(bm, 10^3, epsilons, eta_tab, Repressilator.F, 30.0)
+Random.seed!()
 
 println("#### Viral")
 println("# Load data")
