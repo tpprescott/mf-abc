@@ -260,20 +260,23 @@ function variance_table(bm::BenchmarkCloud, sample_size::Integer, epsilons::Tupl
     return variance_table(bm, sample_size, epsilons, eta_tab, Functions, budget)
 end
 
-function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}; method::String="mf", kwargs...)
-    eta_real, phi_mf = get_eta(bm, epsilons, method=method)
-    eta_estimates = [get_eta(cld, epsilons; method=method, kwargs...)[1] for cld in cloud_set]
+function plot_eta_estimates(bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, cloud_sets::Tuple{Array{<:Cloud,1},AbstractString}...; method::String="mf", kwargs...)
     
-    fig = plot(legend=:none, grid=:none,
+    fig = plot(grid=:none,
     xlabel=L"\eta_1",
     ylabel=L"\eta_2",
     labelfontsize=10,
     title="Continuation Probabilities and Efficiency",
     titlefontsize=11)
-    
-    scatter!(eta_estimates, markersize=6, markerstrokewidth=0, xlim=(0,1), ylim=(0,1),label="Estimates")
-    scatter!(eta_real, markersize=6, markerstrokewidth=0, label="Benchmark")
-    
+
+    for (cs,l) in cloud_sets
+        eta_estimates = [get_eta(cld, epsilons; method=method, kwargs...)[1] for cld in cs]
+        scatter!(eta_estimates, markersize=6, markerstrokewidth=0, xlim=(0,1), ylim=(0,1),label=l)
+    end
+
+    eta_real, phi_mf = get_eta(bm, epsilons, method=method)
+    scatter!(eta_real, markersize=6, markerstrokewidth=0, label="Benchmark", color=:red)
+
     grd = 0:0.01:1
     sp = sample_properties(bm, epsilons)
     phi_plot((x,y)) = phi((x,y), sp...)
@@ -288,7 +291,7 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
     colorbar=:none)
 end
 
-function plot_apost_efficiencies(labels::NTuple{N, AbstractString}, cld_sets::Vararg{Array{<:Cloud,1},N}) where N
+function plot_apost_efficiencies(cloud_sets::Tuple{Array{<:Cloud,1},AbstractString}...)
     
     eff(set) = ESS.(set)./cost.(set)
 
@@ -303,8 +306,8 @@ function plot_apost_efficiencies(labels::NTuple{N, AbstractString}, cld_sets::Va
     title="Observed Distribution of Efficiency",
     titlefontsize=12)
     
-    for (c, l) in zip(cld_sets, labels)
-        violin!(eff(c), label=l)
+    for (cs, l) in cloud_sets
+        violin!(eff(cs), label=l)
     end
     return fig
 end

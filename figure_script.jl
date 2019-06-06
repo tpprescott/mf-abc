@@ -66,9 +66,9 @@ println("# Fig 3")
 savefig(view_distances(bm[1:10000], epsilons, epsilons.*2), "figures/fig3.pdf")
 
 println("# Fig 4")
-fig4 = plot_eta_estimates(mf_set, bm, epsilons; method="mf", lower_eta=eta_0)
-plot!(xlim=(0,0.4),ylim=(0,0.4))
+fig4 = plot_eta_estimates(bm, epsilons, (bm_set,"After burn-in"), (mf_set,"After adaptation"); method="mf", lower_eta=eta_0)
+plot!(xlim=(0,0.4),ylim=(0,0.2))
 savefig(fig4, "figures/fig4.pdf")
 
 println("# Fig 5")
-savefig(plot_apost_efficiencies(("After large burn-in","After small burn-in","During burn-in"),inc_largeBI_set,inc_smallBI_set,bm_set), "figures/fig5.pdf")
+savefig(plot_apost_efficiencies((inc_largeBI_set,"After large burn-in"), (inc_smallBI_set, "After small burn-in"), (bm_set, "During burn-in")), "figures/fig5.pdf")
