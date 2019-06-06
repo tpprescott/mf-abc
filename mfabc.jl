@@ -37,6 +37,9 @@ cost(pp::MFABCParticle, i) = cost(pp.p, i)
 cost(c::Cloud) = sum(cost.(c))
 cost(c::Cloud, i) = sum(cost.(c, i))
 
+accept(p::Particle, epsilon::Float64) = (p.dist[2]<=epsilon)
+accept_rate(c::BenchmarkCloud, epsilon::Float64) = count(p->accept(p,epsilon), c)/length(c)
+
 
 ######## Running simulations: benchmark particles ignore MFABC
 function BenchmarkParticle(mfabc::MFABC, i::Int64=1)::Particle{2}
@@ -141,6 +144,13 @@ end
 # convert
 function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64})::MFABCCloud
     return map(p->MFABCParticle(p, epsilons, etas)[1], s) # First component is the particle (second is cost of particle)
+end
+function MakeMFABCCloud(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, etas::Tuple{Float64, Float64}, budget::Float64)::MFABCCloud
+    function truncate(cld, b, args...)
+        return cld[1:searchsortedlast(cumsum(cost.(cld, args...)), b)]
+    end
+    mf = MakeMFABCCloud(truncate(s,budget,1), epsilons, etas)
+    return truncate(mf, budget)
 end
 
 ## Unknown eta: need to take into account finding a good eta, potentially given a function to be estimated
