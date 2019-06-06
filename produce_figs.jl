@@ -288,7 +288,7 @@ function plot_eta_estimates(cloud_set::Array{<:Cloud,1}, bm::BenchmarkCloud, eps
     colorbar=:none)
 end
 
-function plot_apost_efficiencies(inc_set::Array{<:Cloud,1}, bm_set::Array{<:Cloud,1})
+function plot_apost_efficiencies(labels::NTuple{N, AbstractString}, cld_sets::Vararg{Array{<:Cloud,1},N}) where N
     
     eff(set) = ESS.(set)./cost.(set)
 
@@ -303,5 +303,8 @@ function plot_apost_efficiencies(inc_set::Array{<:Cloud,1}, bm_set::Array{<:Clou
     title="Observed Distribution of Efficiency",
     titlefontsize=12)
     
-    violin!([eff(inc_set), eff(bm_set)], label=["Small burn-in" "Rejection sampling"])
+    for (c, l) in zip(cld_sets, labels)
+        violin!(eff(c), label=l)
+    end
+    return fig
 end

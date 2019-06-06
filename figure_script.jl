@@ -27,13 +27,40 @@ Random.seed!()
 
 println("#### Viral")
 println("# Load data")
+
 bm = MakeBenchmarkCloud("viral/output")
-mf_location = "viral/output/mf/"
-mf_cloud_idx = readdir(mf_location)
-mf_set = [MakeMFABCCloud(mf_location*cloud_id) for cloud_id in mf_cloud_idx]
+mf_smallBI_location = "./viral/output/mf_smallBI/"
+mf_largeBI_location = "./viral/output/mf_largeBI/"
+
 epsilons = (0.25,0.25)
 eta_0 = 0.01
-sample_size = 10^3
+smallBI_size = 10^3
+largeBI_size = length(bm)
+
+function divide_cloud(c::MFABCCloud, s::Integer; stage::String)
+    if stage=="bm"
+        return c[1:s]
+    elseif stage=="inc"
+        return c[s+1:end]
+    end
+    error("What stage? bm or inc")
+end
+
+bm_set = Array{MFABCCloud,1}()
+mf_set = Array{MFABCCloud,1}()
+inc_smallBI_set = Array{MFABCCloud,1}()
+inc_largeBI_set = Array{MFABCCloud,1}()
+
+for cloud_location in mf_smallBI_location.*readdir(mf_smallBI_location)
+    c = MakeMFABCCloud(cloud_location)
+    push!(mf_set, c)
+    push!(bm_set, divide_cloud(c, smallBI_size, stage="bm"))
+    push!(inc_smallBI_set, divide_cloud(c, smallBI_size, stage="inc"))
+end
+for cloud_location in mf_largeBI_location.*readdir(mf_largeBI_location)
+    c = MakeMFABCCloud(cloud_location)
+    push!(inc_largeBI_set, divide_cloud(c, largeBI_size, stage="inc"))
+end
 
 println("# Fig 3")
 savefig(view_distances(bm[1:10000], epsilons, epsilons.*2), "figures/fig3.pdf")
@@ -44,6 +71,4 @@ plot!(xlim=(0,0.4),ylim=(0,0.4))
 savefig(fig4, "figures/fig4.pdf")
 
 println("# Fig 5")
-bm_set = [cld[1:sample_size] for cld in mf_set]
-inc_set = [cld[sample_size+1:end] for cld in mf_set]
-savefig(plot_apost_efficiencies(inc_set, bm_set), "figures/fig5.pdf")
+savefig(plot_apost_efficiencies(("After large burn-in","After small burn-in","During burn-in"),inc_largeBI_set,inc_smallBI_set,bm_set), "figures/fig5.pdf")
