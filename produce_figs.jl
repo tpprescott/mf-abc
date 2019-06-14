@@ -275,7 +275,7 @@ function plot_eta_estimates(bm::BenchmarkCloud, epsilons::Tuple{Float64, Float64
     end
 
     eta_real, phi_mf = get_eta(bm, epsilons, method=method)
-    scatter!(eta_real, markersize=6, markerstrokewidth=0, label="Benchmark", color=:red)
+    scatter!(eta_real, markersize=6, markerstrokewidth=0, label="Benchmark", color=:black)
 
     grd = 0:0.01:1
     sp = sample_properties(bm, epsilons)

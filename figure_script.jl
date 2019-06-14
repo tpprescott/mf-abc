@@ -25,6 +25,25 @@ Random.seed!(123)
 var_tab = variance_table(bm, 10^3, epsilons, eta_tab, Repressilator.F, 30.0)
 Random.seed!()
 
+println("# Supplementary")
+
+t,x,p = simulate(Repressilator.tlm)
+tt,xx = complete(Repressilator.tlm, p)
+
+function show_plots(solutions::NTuple{N,Tuple{Times,States,String}}, j::Integer; kwargs...) where N
+       fig = plot(; kwargs...);
+       for (t,x,l) in solutions
+       plot!(t,x[j,:]; label=l)
+       end
+       return fig
+end
+
+titles = ["mRNA1", "mRNA2", "mRNA3", "P1", "P2", "P3"]
+figs = [show_plots(((t,x,"Tau-leap"),(tt,xx,"Gillespie")),j; title=ttl, legend=:none) for (j, ttl) in enumerate(titles)]
+figs[1] = plot!(figs[1]; legend=:topleft)
+repressilator_eg = plot(figs..., layout=6)
+savefig(repressilator_eg, "./figures/SFig1.pdf")
+
 println("#### Viral")
 println("# Load data")
 
@@ -72,3 +91,10 @@ savefig(fig4, "figures/fig4.pdf")
 
 println("# Fig 5")
 savefig(plot_apost_efficiencies((inc_largeBI_set,"After large burn-in"), (inc_smallBI_set, "After small burn-in"), (bm_set, "During burn-in")), "figures/fig5.pdf")
+
+println("# Supplementary")
+t,x,p = simulate(Repressilator.tlm)
+tt,xx = complete(Repressilator.tlm, p)
+
+f = [plot(t,x',label=["template" "genome" "struct" "virus"]), plot(tt,xx',legend=:none)]
+savefig(plot(f..., layout=2, size=(1000,400)), "./figures/SFig2.pdf")
