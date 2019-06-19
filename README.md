@@ -15,6 +15,8 @@ The third module is the main part of the code, and split into three:
 
 We have saved the simulations used in the paper in the `repressilator` and `viral` folders. Running the script `figure_script.jl` will reproduce the figures in the paper based on these saved simulations.
 
+**Note:** We have recently discovered that Git LFS charges for storage. We have also put the [repressilator](https://cloud.maths.ox.ac.uk/index.php/s/nwM5DfwqG5wYrb9 "Repressilator Simulations")  and [viral](https://cloud.maths.ox.ac.uk/index.php/s/Qx5Wo4rYW4bTtKr "Viral Dynamics Simulations") simulation data into separate cloud storage.
+
 ## mfabc.jl
 ### Types
 
