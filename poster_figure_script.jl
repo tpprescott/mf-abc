@@ -1,5 +1,5 @@
 include("MultiFidelityABC.jl")
-mkpath("figures")
+mkpath("poster_figures")
 
 using StatsPlots, Random
 
@@ -9,92 +9,72 @@ bm = MakeBenchmarkCloud("repressilator/output")
 epsilons = (50.0,50.0)
 sample_size = 10^4
 
-println("# Fig 1")
+println("# MF Distances")
 fig1a = view_distances(bm[1:sample_size], epsilons)
-fig1b = view_distances(bm[1:sample_size], epsilons, 2, L"n")
-savefig(plot(fig1a, fig1b, layout=2, size=(900,360)), "figures/fig1.pdf")
+savefig(plot(fig1a, size=(512,550)), "poster_figures/distances.pdf")
 
-println("# Fig 2 and Table 1")
+println("# MF Tuning/Results")
 fig2a = compare_efficiencies(bm, sample_size, epsilons, output="theory")
 fig2b, table1, latex_table1 = compare_efficiencies(bm, sample_size, epsilons, output="plot")
-savefig(plot(fig2a, fig2b, layout=2, size=(1100,440)), "figures/fig2.pdf")
+savefig(plot(fig2a, fig2b, layout=2, size=(1100,550)), "poster_figures/tuned.pdf")
 
-println("# Table 2 and 3")
-eta_tab, phi_tab = get_eta(bm, epsilons, Repressilator.F)
-Random.seed!(123)
-var_tab = variance_table(bm, 10^3, epsilons, eta_tab, Repressilator.F, 30.0)
-Random.seed!()
+println("# ABC and Estimators")
+figA = view_distances(bm[1:sample_size], epsilons, 2, L"n")
 
-println("# Supplementary")
-
-t,x,p = simulate(Repressilator.tlm)
-tt,xx = complete(Repressilator.tlm, p)
-
-function show_plots(solutions::NTuple{N,Tuple{Times,States,String}}, j::Integer; kwargs...) where N
-       fig = plot(; kwargs...);
-       for (t,x,l) in solutions
-       plot!(t,x[j,:]; label=l)
-       end
-       return fig
+function get_n(bm, i::Int64, epsilons::NTuple{2,Float64})
+    return [p.k[2] for p in bm if p.dist[i]<epsilons[i]]
 end
 
-titles = ["mRNA1", "mRNA2", "mRNA3", "P1", "P2", "P3"]
-figs = [show_plots(((t,x,"Tau-leap"),(tt,xx,"Gillespie")),j; title=ttl, legend=:none) for (j, ttl) in enumerate(titles)]
-figs[1] = plot!(figs[1]; legend=:topleft)
-repressilator_eg = plot(figs..., layout=6)
-savefig(repressilator_eg, "./figures/SFig1.pdf")
+s = get_n(bm[1:sample_size], 2, epsilons)
+mean(x) = sum(x)/length(x)
 
-println("#### Viral")
-println("# Load data")
+figB = plot(s, seriestype=:histogram,
+    title="Empirical posterior and mean", 
+    xlabel=L"n",
+    ylabel="",
+    normalize=:pdf,
+    bins=20)
+figB = vline!([mean(s)], linewidth=3, linestyle=:dash, color=[:black], label="")
 
-bm = MakeBenchmarkCloud("viral/output")
-mf_smallBI_location = "./viral/output/mf_smallBI/"
-mf_largeBI_location = "./viral/output/mf_largeBI/"
+# Get the times and the estimates
+bm_p = Iterators.partition(bm, sample_size)
 
-epsilons = (0.25,0.25)
-eta_0 = 0.01
-smallBI_size = 10^3
-largeBI_size = length(bm)
+N = length(bm_p)
+v1 = Array{Float64, 1}(undef, N) 
+v2 = Array{Float64, 1}(undef, N)
+v3 = Array{Float64, 1}(undef, N)
+t1 = Array{Float64, 1}(undef, N) 
+t2 = Array{Float64, 1}(undef, N)
+t3 = Array{Float64, 1}(undef, N)
 
-function divide_cloud(c::MFABCCloud, s::Integer; stage::String)
-    if stage=="bm"
-        return c[1:s]
-    elseif stage=="inc"
-        return c[s+1:end]
-    end
-    error("What stage? bm or inc")
+function get_n(mfcloud)
+    return sum([p.w * p.p.k[2] for p in mfcloud])/sum([p.w for p in mfcloud])
 end
 
-bm_set = Array{MFABCCloud,1}()
-mf_set = Array{MFABCCloud,1}()
-inc_smallBI_set = Array{MFABCCloud,1}()
-inc_largeBI_set = Array{MFABCCloud,1}()
+for (i, bm_subsample) in Iterators.enumerate(bm_p)
+    r = collect(bm_subsample)
 
-for cloud_location in mf_smallBI_location.*readdir(mf_smallBI_location)
-    c = MakeMFABCCloud(cloud_location)
-    push!(mf_set, c)
-    push!(bm_set, divide_cloud(c, smallBI_size, stage="bm"))
-    push!(inc_smallBI_set, divide_cloud(c, smallBI_size, stage="inc"))
+    m1 = MakeMFABCCloud(r, epsilons, (1.0, 1.0))
+    m2 = MakeMFABCCloud(r, epsilons, (0.0, 0.0))
+    m3 = MakeMFABCCloud(r, epsilons, (0.1, 0.1)) 
+
+    v1[i] = get_n(m1)
+    v2[i] = get_n(m2)
+    v3[i] = get_n(m3)
+    t1[i] = cost(m1)
+    t2[i] = cost(m2)
+    t3[i] = cost(m3)
 end
-for cloud_location in mf_largeBI_location.*readdir(mf_largeBI_location)
-    c = MakeMFABCCloud(cloud_location)
-    push!(inc_largeBI_set, divide_cloud(c, largeBI_size, stage="inc"))
-end
 
-println("# Fig 3")
-savefig(view_distances(bm[1:10000], epsilons, epsilons.*2), "figures/fig3.pdf")
+figC = plot(; xlabel=L"n", ylabel="Simulation time (s)", title="10^4 SSA simulations", legend=:none)
+figC = scatter!(v1, t1, label="High fidelity")
 
-println("# Fig 4")
-fig4 = plot_eta_estimates(bm, epsilons, (bm_set,"After burn-in"), (mf_set,"After adaptation"); method="mf", lower_eta=eta_0)
-plot!(xlim=(0,0.4),ylim=(0,0.2))
-savefig(fig4, "figures/fig4.pdf")
+figD = plot(; xlabel=L"n", ylabel="Simulation time (s)", title="Comparing posterior means", legend=:right)
+figD = scatter!(v1, t1, label="High fidelity")
+figD = scatter!(v2, t2, label="Low fidelity")
+figD = scatter!(v3, t3, label="Multifidelity")
 
-println("# Fig 5")
-savefig(plot_apost_efficiencies((inc_largeBI_set,"After large burn-in"), (inc_smallBI_set, "After small burn-in"), (bm_set, "During burn-in")), "figures/fig5.pdf")
-
-println("# Supplementary")
-t,x,p = simulate(Repressilator.tlm)
-tt,xx = complete(Repressilator.tlm, p)
-
-f = [plot(t,x',label=["template" "genome" "struct" "virus"]), plot(tt,xx',legend=:none)]
-savefig(plot(f..., layout=2, size=(1000,400)), "./figures/SFig2.pdf")
+savefig(plot(figA, size=(550, 354)), "poster_figures/simulationdistances.pdf")
+savefig(plot(figB, size=(550, 354)), "poster_figures/histogram.pdf")
+savefig(plot(figC, size=(550, 354)), "poster_figures/highfidelity_estimates.pdf")
+savefig(plot(figD, size=(550, 354)), "poster_figures/multifidelity_estimates.pdf")
