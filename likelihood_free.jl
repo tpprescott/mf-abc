@@ -2,7 +2,7 @@ module LikelihoodFree
 
 export AbstractModel, AbstractGenerator, AbstractExperiment, AbstractWeight
 # The model contains the parameters that will be inferred
-abstract type AbstractModel end
+AbstractModel = NamedTuple
 # The generator will generate the model according to some distribution (rejection sampling or importance sampling)
 abstract type AbstractGenerator{M<:AbstractModel} end
 # The experiment contains the data (the space of which parameterises the type) and also conditions under which it was gathered (to control simulations if needed)
@@ -23,40 +23,56 @@ end
 #######
 # Generate models from the generator
 
-import Base.rand
+import Distributions.rand, Distributions.rand!
 export rand
 
-function rand(q::AbstractGenerator{M}; saved...)::M where M<:AbstractModel
-    return q()
+function rand(q::AbstractGenerator{M})::NamedTuple where M<:AbstractModel
+    return (m=q(),)
 end
-function rand!(x::AbstractArray{M}, q::AbstractGenerator{M}; saved...)::Nothing where M<:AbstractModel
-    for i in eachindex(x)
-        x[i] = rand(q)
+function rand!(mm::AbstractArray{M}, q::AbstractGenerator{M})::NamedTuple where M<:AbstractModel
+    for i in eachindex(mm)
+        mm[i] = rand(q)[:m]
     end
-    return nothing
+    return NamedTuple()
 end
-function rand(q::AbstractGenerator{M}, N::Vararg{Int64,K}; saved...)::Array{M,K} where M<:AbstractModel where K
-    x = Array{M,K}(undef, N...)
-    rand!(x, q; saved...)
-    return x
+function rand(q::AbstractGenerator{M}, N::Vararg{Int64,K})::NamedTuple where M<:AbstractModel where K
+    mm = Array{M,K}(undef, N...)
+    save = rand!(mm, q)
+    return merge((mm=mm,), save)
 end
+
+function unnormalised_likelihood(q::AbstractGenerator{M}, m::M)::NamedTuple where M<:AbstractModel
+    return (p=q(m),)
+end
+function unnormalised_likelihood!(pp::AbstractArray{M}, q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
+    for i in eachindex(mm)
+        pp[i] = unnormalised_likelihood(q, mm[i])[:p]
+    end
+    return NamedTuple()
+end
+function unnormalised_likelihood(q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
+    pp = Array{Float64}(undef, size(mm))
+    save = unnormalised_likelihood!(pp, q, mm)
+    return merge((pp=pp,), save)
+end
+
 
 # Apply a Monte Carlo weight based on the simulation output
 export weight
-function weight(w::AbstractWeight{M,U}, m::M, u::U; saved...)::Float64 where M where U
-    return w(m,u)
+function weight(w::AbstractWeight{M,U}, m::M, u::U)::NamedTuple where M where U
+    return (w = w(m,u),)
 end
-function weight!(x::AbstractArray{Float64}, w::AbstractWeight{M,U}, mm::AbstractArray{M}, u::U; saved...)::Nothing where M where U
-    size(x)==size(mm) || error("Mismatched sizes between preallocated array and data set")
+function weight!(ww::AbstractArray{Float64}, w::AbstractWeight{M,U}, mm::AbstractArray{M}, u::U)::NamedTuple where M where U
+    size(ww)==size(mm) || error("Mismatched sizes between preallocated array and data set")
     for i in eachindex(mm)
-        x[i] = weight(w, mm[i], u; i=i, saved...)
+        ww[i] = weight(w, mm[i], u)[:w]
     end
-    return nothing
+    return NamedTuple()
 end
-function weight(w::AbstractWeight{M,U}, mm::AbstractArray{M}, u::U; saved...)::AbstractArray{Float64} where M where U
-    x = Array{Float64}(undef, size(mm))
-    weight!(x, w, mm, u; saved...)
-    return x
+function weight(w::AbstractWeight{M,U}, mm::AbstractArray{M}, u::U)::NamedTuple where M where U
+    ww = Array{Float64}(undef, size(mm))
+    save = weight!(ww, w, mm, u)
+    return merge((ww=ww,), save)
 end
 
 include("rejection_sampling.jl")
@@ -76,63 +92,61 @@ struct LikelihoodFreeWeight{M, U, Y<:AbstractSummaryStatisticSpace, TF<:Abstract
 end
 
 export simulate, compare
-function simulate(F::AbstractSimulator{M,U,Y}, m::M, u::U; saved...)::Y where M where U where Y
-    return F(m, u)
+function simulate(F::AbstractSimulator{M,U,Y}, m::M, u::U)::NamedTuple where M where U where Y
+    return (y = F(m, u),)
 end
-function simulate!(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M}, u::U; yy::AbstractArray{Y}, saved...) where M where U where Y
+function simulate!(yy::AbstractArray{Y}, F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M}, u::U)::NamedTuple where M where U where Y
     for i in eachindex(mm)
-        yy[i] = simulate(F, mm[i], u; i=i, saved...)
+        yy[i] = simulate(F, mm[i], u)[:y]
     end
-    return nothing
+    return NamedTuple()
 end
-function simulate(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M}, u::U; saved...)::AbstractArray{Y} where M where U where Y
+function simulate(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M}, u::U) where M where U where Y
     yy = Array{Y}(undef, size(mm))
-    simulate!(F, mm, u; yy=yy, saved...)
-    return yy
+    save = simulate!(yy, F, mm, u)
+    return merge((yy=yy,), save)
 end
 
-function compare(C::AbstractComparison{U,Y}, u::U, y::Y; saved...)::Float64 where U where Y
-    return C(u, y)
+function compare(C::AbstractComparison{U,Y}, u::U, y::Y)::NamedTuple where U where Y
+    return (w = C(u, y),)
 end
-function compare!(w::AbstractArray{Float64}, C::AbstractComparison{U,Y}, u::U; yy::AbstractArray{Y}, saved...) where U where Y
+function compare!(ww::AbstractArray{Float64}, C::AbstractComparison{U,Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
     for i in eachindex(yy)
-        w[i] = compare(C, u, yy[i]; i=i, saved...)
+        ww[i] = compare(C, u, yy[i])[:w]
     end
-    return nothing
+    return NamedTuple()
 end
-function compare(C::AbstractComparison{U,Y}, u::U; yy::AbstractArray{Y}, saved...) where U where Y
-    w = Array{Float64}(undef, size(yy))
-    compare!(w, C, u; yy=yy, saved...)
-    return w
+function compare(C::AbstractComparison{U,Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
+    ww = Array{Float64}(undef, size(yy))
+    save = compare!(ww, C, u, yy)
+    return merge((ww=ww,), save)
 end
 
-function weight(w::LikelihoodFreeWeight{M,U,Y}, m::M, u::U)::Float64 where M where U where Y
-    y = simulate(w.F, m, u)
-    out = compare(w.C, u, y)
-    return out
+function weight(w::LikelihoodFreeWeight{M,U,Y}, m::M, u::U)::NamedTuple where M where U where Y
+    sim = simulate(w.F, m, u)
+    out = compare(w.C, u, sim[:y])
+    return merge(out, sim)
 end
 function weight!(
     out::AbstractArray{Float64}, 
     w::LikelihoodFreeWeight{M,U,Y}, 
     mm::AbstractArray{M}, 
-    u::U; 
-    yy::AbstractArray{Y} = Array{Y}(undef, size(mm)), 
-    saved...
-)::Nothing where M where U where Y
+    u::U,
+)::NamedTuple where M where U where Y
 
-    simulate!(w.F, mm, u; yy=yy, saved...)
-    compare!(out, w.C, u; yy=yy, saved...)
-    return nothing
+    yy = Array{Y}(undef, size(mm))
+    save1 = simulate!(yy, w.F, mm, u)
+    save2 = compare!(out, w.C, u, yy)
+    return merge((yy=yy,), save1, save2)
 end
-function weight(w::LikelihoodFreeWeight{M,U,Y}, mm::AbstractArray{M}, u::U; yy::AbstractArray{Y}, saved...)::AbstractArray{Float64} where M where U where Y
+function weight(w::LikelihoodFreeWeight{M,U,Y}, mm::AbstractArray{M}, u::U)::NamedTuple where M where U where Y
     out = Array{Float64}(undef, size(mm))
-    weight!(out, w, mm, u; yy=yy, saved...)
-    return out
+    save = weight!(out, w, mm, u)
+    return merge((ww = out,), save)
 end
 
-function sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, C::AbstractComparison{U,Y}, N; saved...) where M where U where Y
-    yy = Array{Y}(undef, N)
-    return sample(u, q, LikelihoodFreeWeight(F, C), N; yy=yy, saved...)
+function sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, C::AbstractComparison{U,Y}, N) where M where U where Y
+    return sample(u, q, LikelihoodFreeWeight(F, C), N)
 end
 
 export output_type, data_type

@@ -1,52 +1,52 @@
-export AbstractContinuationProbability
-
 # Auxiliary functions
 isp(x)::Bool = zero(x) < x <=one(x)
 ispos(x)::Bool = zero(x) < x
 
 # Call the continuation probability
-function continuation_probability(x::AbstractContinuationProbability, m, u, output)::Float64
-    x(m, u, output)
+function continuation_probability(
+    x::H,
+    m::M, 
+    u::U,
+    path..., # Sequence of output from "weight", most recent first
+)::Float64 where H<:AbstractContinuationProbability{M,U,Y} where M where U where Y
+    x(m, u, path...)
 end
 
 # Implement some continuation probabilities
 export Go
-struct Go{U,Y} <: AbstractContinuationProbability{U,Y} end
+struct Go{M,U,Y} <: AbstractContinuationProbability{M,U,Y} end
 (::Go)(args...) = one(Float64)
 
 export EarlyDecision
-struct EarlyDecision{U,Y} <: AbstractContinuationProbability{U,Y}
+struct EarlyDecision{M,U,Y} <: AbstractContinuationProbability{M,U,Y}
     eta::Float64
-    function EarlyDecision{U,Y}(x) where U where Y
-        isp(x) ? new(x) : error("Not probability")
+    function EarlyDecision{M,U,Y}(x) where M where U where Y
+        isp(x) ? new{M,U,Y}(x) : error("Not probability")
     end
 end
 (H::EarlyDecision)(args...) = H.eta
 
 export EarlyAcceptReject
 
-struct EarlyAcceptReject{U, Y, W<:ABCWeight{U,Y}} <: AbstractContinuationProbability{U,Y}
+struct EarlyAcceptReject{M, U, Y, C<:AbstractComparison{U,Y}} <: AbstractContinuationProbability{M, U, Y}
     eta1::Float64
     eta2::Float64
-    wt::W
-    function EarlyAcceptReject(eta1, eta2, w::W) where W<:ABCWeight{U,Y} where U where Y
-        (isp(eta1) & isp(eta2)) ? new{U, Y, W}(eta1, eta2, w) : error("Invalid continuation probabilities") 
+    comparison::C
+    function EarlyAcceptReject{M}(eta1, eta2, comparison::C) where M where C<:AbstractComparison{U,Y} where U where Y
+        (isp(eta1) & isp(eta2)) ? new{M, U, Y, C}(eta1, eta2, comparison) : error("Invalid continuation probabilities") 
     end
 end
-function EarlyAcceptReject(eta1, eta2, d::ABCDistance{U,Y}, epsilon::Float64) where U where Y
-    return EarlyAcceptReject(eta1, eta2, ABCWeight(epsilon, d))
+function EarlyAcceptReject{M}(eta1, eta2, d::D, epsilon::Float64) where M where D<:AbstractDistance{U,Y} where U where Y
+    return EarlyAcceptReject{M}(eta1, eta2, ABCComparison(d, epsilon))
 end
-function (H::EarlyAcceptReject{U,Y})(m, u, output)::Float64 where U where Y
-    return H.eta2 + H.wt(u, output.y[end])*(H.eta1 - H.eta2) 
+function (H::EarlyAcceptReject{M,U,Y})(m::M, u::U, last_node, path...)::Float64 where M where U where Y
+    wt = compare(H.comparison, u, last_node[:y])
+    return H.eta2 + wt[:w]*(H.eta1 - H.eta2) 
 end
 
 export EarlyReject
 EarlyReject(x::Float64, args...) = EarlyAcceptReject(1.0, x, args...)
 
-struct ZeroDistance{U,Y} <: AbstractABCDistance{U,Y} end
-function (d::ZeroDistance{U,Y})(u::U, y::Y) where U where Y
-    return zero(Float64)
-end
 
 # Might be possible to play with promotions and conversions to speed things up
 #=
