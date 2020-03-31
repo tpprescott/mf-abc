@@ -72,10 +72,10 @@ function compare(c::ABCComparison{U,Y}, u::U, yy::AbstractArray{Y})::NamedTuple 
     return merge((ww = out,), save)
 end
 
-import .LikelihoodFree.sample
-export sample
-function sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, d::AbstractDistance{U,Y}, epsilon::Float64, N) where M where U where Y
-    return sample(u, q, ABCWeight(epsilon, d), N)
+import .LikelihoodFree.rejection_sample
+export rejection_sample
+function rejection_sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, d::AbstractDistance{U,Y}, epsilon::Float64, N) where M where U where Y
+    return rejection_sample(u, q, ABCWeight(epsilon, d), N)
 end
 
 end

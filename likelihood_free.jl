@@ -110,8 +110,8 @@ function weight(w::LikelihoodFreeWeight{M,U,Y}, mm::AbstractArray{M}, u::U)::Nam
     return merge((ww = out,), save)
 end
 
-function sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, C::AbstractComparison{U,Y}, N) where M where U where Y
-    return sample(u, q, LikelihoodFreeWeight(F, C), N)
+function rejection_sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, C::AbstractComparison{U,Y}, N) where M where U where Y
+    return rejection_sample(u, q, LikelihoodFreeWeight(F, C), N)
 end
 
 export output_type, data_type

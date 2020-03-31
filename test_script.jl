@@ -41,8 +41,8 @@ mf_w = MFABCWeight(W1, W2, η)
 
 using Distributions: Normal, MvNormal, Uniform
 
-out = sample(u, q, w,400)
+out = rejection_sample(u, q, w,400)
 X = SequentialImportanceDistribution(out[:ww], out[:mm], q)
 
-out2 = sample(u, q2, w2, 400)
+out2 = rejection_sample(u, q2, w2, 400)
 X2 = SequentialImportanceDistribution(out2[:ww], out2[:mm], q2)
