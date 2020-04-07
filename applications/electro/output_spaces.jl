@@ -30,8 +30,8 @@ struct Displacements <: AbstractSummaryStatisticSpace
         displacements = diff(y, dims=1)
         
         NetDisplacement = abs.(y[end,:])
-        MeanDisplacement = mean(abs, displacements, dims=1)
-        StdDisplacement = sqrt.(mean(abs2, displacements, dims=1) .- MeanDisplacement.^2)
+        MeanDisplacement = mean(abs.(displacements), dims=1)
+        StdDisplacement = sqrt.(mean(abs2.(displacements), dims=1) .- MeanDisplacement.^2)
         return new(vec(NetDisplacement), vec(MeanDisplacement), vec(StdDisplacement))
     end
 end
