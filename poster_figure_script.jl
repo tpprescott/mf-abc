@@ -32,6 +32,8 @@ figB = plot(s, seriestype=:histogram,
     title="Empirical posterior and mean", 
     xlabel=L"n",
     ylabel="",
+    yticks=[],
+    legend=:none,
     normalize=:pdf,
     bins=20)
 figB = vline!([mean(s)], linewidth=3, linestyle=:dash, color=[:black], label="")
@@ -66,7 +68,7 @@ for (i, bm_subsample) in Iterators.enumerate(bm_p)
     t3[i] = cost(m3)
 end
 
-figC = plot(; xlabel=L"n", ylabel="Simulation time (s)", title="10^4 SSA simulations", legend=:none)
+figC = plot(; xlabel=L"n", ylabel="Simulation time (s)", title="Empirical posterior means", legend=:none)
 figC = scatter!(v1, t1, label="High fidelity")
 
 figD = plot(; xlabel=L"n", ylabel="Simulation time (s)", title="Comparing posterior means", legend=:right)

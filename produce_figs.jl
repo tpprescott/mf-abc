@@ -189,12 +189,12 @@ function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, pa
     fn = [(p.k[par_n], p.dist[2]) for p in s if ((p.dist[1] >= epsilons[1]) & (p.dist[2] < epsilons[2])) ]
 
     # Compare distance by parameter
-    plot(; title="Distance from data by parameter", titlefontsize=18, grid=:none, legend=:none,
+    plot(; title="10^4 SSA simulations", titlefontsize=18, grid=:none, legend=:none,
     xlabel=par_name, ylabel=L"d(y,y_{obs})")
     scatter!(match, markersize=5, markerstrokewidth=0, label="Matching estimator values")
 #    scatter!(fp, markersize=5, markerstrokewidth=0, label="False positive")
 #    scatter!(fn, markersize=5, markerstrokewidth=0, label="False negative")
-    hline!([epsilons[2]], linestyle=:dash, color=[:black], label="")
+    hline!([epsilons[2]], linestyle=:dash, linewidth=3, color=[:black], label="")
 
 end
 function view_distances(s::BenchmarkCloud, epsilons::Tuple{Float64, Float64}, inset_limits::Tuple{Float64,Float64})
