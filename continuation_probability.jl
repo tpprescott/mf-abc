@@ -36,7 +36,7 @@ struct EarlyAcceptReject{M, U, Y, C<:AbstractComparison{U,Y}} <: AbstractContinu
         (isp(eta1) & isp(eta2)) ? new{M, U, Y, C}(eta1, eta2, comparison) : error("Invalid continuation probabilities") 
     end
 end
-function EarlyAcceptReject{M}(eta1, eta2, d::D, epsilon::Float64) where M where D<:AbstractDistance{U,Y} where U where Y
+function EarlyAcceptReject{M}(eta1, eta2, d::D, epsilon::Float64) where M where D<:AbstractDistance{Y} where U where Y
     return EarlyAcceptReject{M}(eta1, eta2, ABCComparison(d, epsilon))
 end
 function (H::EarlyAcceptReject{M,U,Y})(m::M, u::U, last_node, path...)::Float64 where M where U where Y

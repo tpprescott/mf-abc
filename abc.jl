@@ -4,10 +4,10 @@ using ..LikelihoodFree
 
 # ABC gives a specific subtype of AbstractComparison{U,Y} that relies on a distance metric and a threshold value
 export AbstractDistance
-abstract type AbstractDistance{U,Y} end
+abstract type AbstractDistance{Y <: AbstractSummaryStatisticSpace} end
 
 export ABCComparison, ABCWeight
-struct ABCComparison{U, Y, D<:AbstractDistance{U,Y}} <: AbstractComparison{U,Y}
+struct ABCComparison{U, Y, D<:AbstractDistance{Y}} <: AbstractComparison{U,Y}
     d::D
     epsilon::Float64
 end
@@ -18,16 +18,19 @@ ABCWeight(F::TF, d::D, epsilon::Float64) where TF where D<:AbstractDistance = AB
 import .LikelihoodFree.compare, .LikelihoodFree.compare!
 export measure, accept_reject, compare
 
-function measure(d::AbstractDistance{U, Y}, u::U, y::Y)::NamedTuple where U where Y
-    return (d = d(u, y),)
+function measure(d::AbstractDistance{Y}, y_obs::Y, y::Y)::NamedTuple where Y
+    return (d=d(y_obs, y),)
 end
-function measure!(dd::AbstractArray{Float64}, d::AbstractDistance{U,Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
+function measure(d::AbstractDistance{Y}, u::U, y::Y)::NamedTuple where U<:AbstractExperiment{Y} where Y
+    return measure(d, u.y_obs, y)
+end
+function measure!(dd::AbstractArray{Float64}, d::AbstractDistance{Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
     for i in eachindex(yy)
         dd[i] = measure(d, u, yy[i])[:d]
     end
     return NamedTuple()
 end
-function measure(d::AbstractDistance{U,Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
+function measure(d::AbstractDistance{Y}, u::U, yy::AbstractArray{Y})::NamedTuple where U where Y
     dd = Array{Float64}(undef, size(yy))
     save = measure!(dd, d, u, yy)
     return merge((dd=dd,),save)
@@ -45,7 +48,7 @@ function accept_reject!(ww::AbstractArray{Float64}, epsilon::Float64, dd::Abstra
 end
 function accept_reject(epsilon::Float64, dd::AbstractArray{Float64})::NamedTuple
     ww = Array{Float64}(undef, size(dd))
-    save = accept_reject!(ar, epsilon, dd)
+    save = accept_reject!(ww, epsilon, dd)
     return merge((ww=ww,),save)
 end
 
@@ -74,7 +77,7 @@ end
 
 import .LikelihoodFree.rejection_sample
 export rejection_sample
-function rejection_sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, d::AbstractDistance{U,Y}, epsilon::Float64, N) where M where U where Y
+function rejection_sample(u::U, q::AbstractGenerator{M}, F::AbstractSimulator{M,U,Y}, d::AbstractDistance{Y}, epsilon::Float64, N) where M where U where Y
     return rejection_sample(u, q, ABCWeight(epsilon, d), N)
 end
 
