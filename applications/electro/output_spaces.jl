@@ -38,7 +38,7 @@ end
 # TODO: distances in each space
 
 using CSV
-df = CSV.read("No_EF.csv")
+df = CSV.read("applications/electro/No_EF.csv")
 
 u_obs = reshape(complex.(df[!,:x], df[!,:y]), 37, 50)
 t_obs = collect(0.:5.:180.)
