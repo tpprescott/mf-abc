@@ -53,19 +53,19 @@ function make_array(mm::Array{M}) where M<:AbstractModel
     return out
 end
 
-function unnormalised_likelihood(q::DistributionGenerator{M,D}, m::M) where M<:AbstractModel where D
+function unnormalised_importance_weight(q::DistributionGenerator{M,D}, m::M) where M<:AbstractModel where D
     dim = length(q.d)
     p = (dim==1 ? pdf(q.d, values(m)[1]) : pdf(q.d, [values(m)...]))
     return (p=p,)
 end
-function unnormalised_likelihood!(pp::AbstractArray{Float64,1}, q::DistributionGenerator{M, D}, mm::AbstractArray{M}) where M where D
+function unnormalised_importance_weight!(pp::AbstractArray{Float64,1}, q::DistributionGenerator{M, D}, mm::AbstractArray{M}) where M where D
     dim = length(q.d)
     mm_array = make_array(mm)
     pp[:] .= (dim==1 ? pdf.(q.d, mm_array) : pdf(q.d, mm_array))
     return NamedTuple()
 end
-function unnormalised_likelihood(q::DistributionGenerator{M,D}, mm::AbstractArray{M}) where M<:AbstractModel where D
+function unnormalised_importance_weight(q::DistributionGenerator{M,D}, mm::AbstractArray{M}) where M<:AbstractModel where D
     pp = Array{Float64,1}(undef, size(mm))
-    save = unnormalised_likelihood!(pp, q, mm)
+    save = unnormalised_importance_weight!(pp, q, mm)
     return merge((pp=pp,), save)
 end

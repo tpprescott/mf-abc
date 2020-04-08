@@ -66,10 +66,34 @@ function simulate!(yy::AbstractArray{Y}, F::AbstractSimulator{M,U,Y}, mm::Abstra
     end
     return NamedTuple()
 end
-function simulate(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M}, u::U) where M where U where Y
-    yy = Array{Y}(undef, size(mm))
+function simulate(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M,1}, u::U) where M where U where Y
+    yy = Array{Y,1}(undef, length(mm))
     save = simulate!(yy, F, mm, u)
     return merge((yy=yy,), save)
+end
+
+# Multiple (K) simulations per parameter value
+function simulate(F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M,1}, u::U, K::Int64) where M where U where Y
+    yy = Array{Array{Y,1},1}(undef, length(mm))
+    save = simulate!(yy, F, mm, u, K)
+    return merge((yy=yy,), save)
+end
+function simulate!(yy::Array{Array{Y,1},1}, F::AbstractSimulator{M,U,Y}, mm::AbstractArray{M,1}, u::U, K::Int64) where M where U where Y
+    for i in eachindex(mm)
+        yy[i] = simulate(F, mm[i], u, K)[:y]
+    end
+    return NamedTuple()
+end
+function simulate(F::AbstractSimulator{M,U,Y}, m::M, u::U, K::Int64) where M where U where Y
+    y = Array{Y,1}(undef, K)
+    save = simulate!(y, F, m, u)
+    return merge((y=y,), save)
+end
+function simulate!(y::AbstractArray{Y,1}, F::AbstractSimulator{M,U,Y}, m::M, u::U) where M where U where Y
+    for i in eachindex(y)
+        y[i] = simulate(F, m, u)[:y]
+    end
+    return NamedTuple()
 end
 
 function compare(C::AbstractComparison{U,Y}, u::U, y::Y)::NamedTuple where U where Y
