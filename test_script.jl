@@ -9,20 +9,16 @@ q2 = DistributionGenerator(Tom2, MvNormal(2, 1.0))
 TomU = ExperimentalData{Float64}
 u = TomU(0.4)
 
-struct TomY <: AbstractSummaryStatisticSpace
-    y::Float64
-end
-
-struct TomF <: AbstractSimulator{Tom, TomU, TomY} end
-(::TomF)(m::Tom, u::TomU)::TomY = TomY(m.x + randn())
+struct TomF <: AbstractSimulator{Tom, TomU, Float64} end
+(::TomF)(m::Tom, u::TomU)::Float64 = m.x + randn()
 F = TomF()
-struct TomF2 <: AbstractSimulator{Tom2, TomU, TomY} end
-(::TomF2)(m::Tom2, u::TomU)::TomY = TomY(m.a + m.b*randn())
+struct TomF2 <: AbstractSimulator{Tom2, TomU, Float64} end
+(::TomF2)(m::Tom2, u::TomU)::Float64 = Float64(m.a + m.b*randn())
 F2 = TomF2()
 
 
-struct TomD <: AbstractDistance{TomU, TomY} end
-(::TomD)(u::TomU, y::TomY) = abs(u.y_obs - y.y)
+struct TomD <: AbstractDistance{TomU, Float64} end
+(::TomD)(u::TomU, y::Float64) = abs(u.y_obs - y)
 d = TomD()
 
 c = ABCComparison(d, 0.1)
