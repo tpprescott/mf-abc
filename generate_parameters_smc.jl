@@ -113,4 +113,4 @@ function rand(q::SequentialImportanceDistribution{M,D,P}, N::Int64) where M<:Abs
     return merge((mm=mm,), save)
 end
 
-# TODO - should really implement unnormalised_likelihood for this distribution too
+# TODO - should really implement unnormalised_importance_weight for this distribution too

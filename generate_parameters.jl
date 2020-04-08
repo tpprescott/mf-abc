@@ -15,24 +15,24 @@ function rand!(mm::AbstractArray{M}, q::AbstractGenerator{M})::NamedTuple where 
     end
     return NamedTuple()
 end
-function rand(q::AbstractGenerator{M}, N::Vararg{Int64,K})::NamedTuple where M<:AbstractModel where K
-    mm = Array{M,K}(undef, N...)
+function rand(q::AbstractGenerator{M}, N::Int64)::NamedTuple where M<:AbstractModel
+    mm = Array{M,1}(undef, N)
     save = rand!(mm, q)
     return merge((mm=mm,), save)
 end
 
-function unnormalised_likelihood(q::AbstractGenerator{M}, m::M)::NamedTuple where M<:AbstractModel
+function unnormalised_importance_weight(q::AbstractGenerator{M}, m::M)::NamedTuple where M<:AbstractModel
     return (p=q(m),)
 end
-function unnormalised_likelihood!(pp::AbstractArray{M}, q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
+function unnormalised_importance_weight!(pp::AbstractArray{M}, q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
     for i in eachindex(mm)
-        pp[i] = unnormalised_likelihood(q, mm[i])[:p]
+        pp[i] = unnormalised_importance_weight(q, mm[i])[:p]
     end
     return NamedTuple()
 end
-function unnormalised_likelihood(q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
+function unnormalised_importance_weight(q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
     pp = Array{Float64}(undef, size(mm))
-    save = unnormalised_likelihood!(pp, q, mm)
+    save = unnormalised_importance_weight!(pp, q, mm)
     return merge((pp=pp,), save)
 end
 
