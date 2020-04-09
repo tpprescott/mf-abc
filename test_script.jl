@@ -1,34 +1,38 @@
-Tom = NamedTuple{(:x,), Tuple{Float64,}}
+TomM = NamedTuple{(:x,), Tuple{Float64,}}
 Tom2 = NamedTuple{(:a, :b), Tuple{Float64, Float64}}
 
 using Distributions: Uniform, MvNormal, Normal
 
-q = DistributionGenerator(Tom, Uniform(0,1))
+q = DistributionGenerator(TomM, Uniform(0,1))
 q2 = DistributionGenerator(Tom2, MvNormal(2, 1.0))
 
-TomU = ExperimentalData{Float64}
-u = TomU(0.4)
+y_obs = Array{Float64,1}([0.4])
 
-struct TomF <: AbstractSimulator{Tom, TomU, Float64} end
-(::TomF)(m::Tom, u::TomU)::Float64 = m.x + randn()
+struct TomF <: AbstractSimulator{TomM, Float64} end
+(::TomF)(m::TomM)::Float64 = m.x + randn()
 F = TomF()
-struct TomF2 <: AbstractSimulator{Tom2, TomU, Float64} end
-(::TomF2)(m::Tom2, u::TomU)::Float64 = Float64(m.a + m.b*randn())
-F2 = TomF2()
 
+#struct TomF2 <: AbstractSimulator{Tom2, TomU, Float64} end
+#(::TomF2)(m::Tom2, u::TomU)::Float64 = Float64(m.a + m.b*randn())
+#F2 = TomF2()
 
-struct TomD <: AbstractDistance{TomU, Float64} end
-(::TomD)(u::TomU, y::Float64) = abs(u.y_obs - y)
+struct TomD <: AbstractDistance{Float64} end
+(::TomD)(u, y) = sum(abs, u - y)
 d = TomD()
 
-c = ABCComparison(d, 0.1)
-w = ABCWeight(F, d, 0.1) # Same thing as LikelihoodFreeWeight(F,c)
-w2 = ABCWeight(F2, d, 0.1)
+c_abc = ABCComparison{Float64, TomD}(d, 0.1)
+w_abc = ABCWeight(F, d, 0.1) # Same thing as LikelihoodFreeWeight(F,c_abc)
+
+c_sb = SyntheticLikelihood{Float64}()
+w_sb = LikelihoodFreeWeight(F, c_sb, 500)
+
+# w2 = LikelihoodFreeWeight(F2, c)
 
 ### MF
+break
 
 F_1 = TomF(); F_2 = TomF();
-W1 = ABCWeight(F_1, d, 0.1); W2 = ABCWeight(F_2, d, 0.1);
+W1 = LikelihoodFreeWeight(F_1, c); W2 = LikelihoodFreeWeight(F_2, c);
 η = EarlyAcceptReject{Tom}(0.3, 0.5, d, 0.1)
 
 mf_w = MFABCWeight(W1, W2, η)

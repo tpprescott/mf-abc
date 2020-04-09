@@ -1,7 +1,8 @@
 module ElectroTaxis
 
 using ..LikelihoodFree
-using ..ABC
+# using ..ABC
+using ..SyntheticBayes
 using Statistics
 
 # Parameter values
