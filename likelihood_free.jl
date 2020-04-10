@@ -21,7 +21,7 @@ function weight(w::AbstractWeight{M}, mm::AbstractArray{M,1}, y_obs)::NamedTuple
     save = weight!(ww, w, mm, y_obs)
     return merge((ww=ww,), save)
 end
-function weight!(ww::AbstractArray{Float64,1}, w::AbstractWeight{M}, mm::AbstractArray{M,1}, y_obs)::NamedTuple where M where U
+function weight!(ww::AbstractArray{Float64,1}, w::AbstractWeight{M}, mm::AbstractArray{M,1}, y_obs)::NamedTuple where M
     for i in eachindex(mm)
         ww[i] = weight(w, mm[i], y_obs)[:w]
     end
@@ -51,7 +51,7 @@ function weight(w::LikelihoodFreeWeight{M,T}, m::M, y_obs)::NamedTuple where M w
     yy = Array{T, 4}(undef, size(y_obs,1), 1, w.K, size(y_obs,2))
     save_sim = simulate!(yy, w.F, m)
     out = compare(w.C, yy, y_obs)
-    return merge(out, (yy=yy,), save_sim)
+    return merge(out, (y=yy,), save_sim)
 end
 
 # Many parameters means many weights output

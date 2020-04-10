@@ -19,6 +19,9 @@ ABCWeight(F::TF, d::D, epsilon::Float64, K::Int64=1) where TF where D<:AbstractD
 import .LikelihoodFree.compare, .LikelihoodFree.compare!
 export measure, accept_reject, measure!, accept_reject!, compare, compare!
 
+# TODO Import and overload the weight! function so that only as many simulations as needed are carried out:
+# Where ndims(y_obs)==2 we simulate and update ww taking each nDataPoint in turn, at each iteration simulating only those nParameter such that !iszero(w[nParameter])
+
 function compare(c::ABCComparison{T}, y::AbstractArray{T,2}, y_obs::AbstractArray{T,1})::NamedTuple where T
     dist = measure(c.d, y, y_obs)
     out = accept_reject(c.epsilon, dist[:d])
