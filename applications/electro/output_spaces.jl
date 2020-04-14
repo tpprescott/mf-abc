@@ -37,19 +37,3 @@ struct Displacements <: AbstractSummaryStatisticSpace
 end
 # TODO: distances in each space
 
-using CSV
-df = CSV.read("applications/electro/No_EF.csv")
-
-u_obs = reshape(complex.(df[!,:x], df[!,:y]), 37, 50)
-t_obs = collect(0.:5.:180.)
-
-export NoEF_Raw, NoEF_Rotated, NoEF_Displacements
-NoEF_Raw = NoEF_Experiment(RawTimeSeries(
-    u_obs, t_obs),
-    t_obs)
-NoEF_Rotated = NoEF_Experiment(RotatedTimeSeries(
-    u_obs, t_obs),
-    t_obs)
-NoEF_Displacements = NoEF_Experiment(Displacements(
-    u_obs, t_obs),
-    t_obs)
