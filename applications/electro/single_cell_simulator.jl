@@ -1,23 +1,50 @@
 using DifferentialEquations: SDEProblem, solve
 
-using ..LikelihoodFree
+export AbstractEMField, NoEF
+
+# For every concrete Field<:EMField we need to be able to call
+# (emf::Field)(t::Float64)::Complex{Float64}
+abstract type AbstractEMField end
+function (emf::AbstractEMField)(du, u, p, t)
+    drift_NoEF!(du, u, p, t)
+    du[2] += p[:γ]*emf(t)
+    return nothing
+end
+
+struct NoEF <: AbstractEMField end
+const NOFIELD = NoEF()
+(::NoEF)(t) = complex(0.0)
+(::NoEF)(du, u, p, t) = drift_NoEF!(du, u, p, t)
 
 export SingleCellSimulator
-abstract type SingleCellSimulator{M, T} <: AbstractSimulator{M, T} end
+# abstract type SingleCellSimulator{M, T, F<:EMField} <: AbstractSimulator{M, T} end
 
-export SC_NoEF_Displacements
-struct SC_NoEF_Displacements <: SingleCellSimulator{SingleCellModel_NoEF, Float64}
+const noise_shape = [complex(0.0), complex(1.0)]
+struct SingleCellSimulator{M<:SingleCellModel} <: AbstractSimulator{M, Float64}
     prob::SDEProblem
     σ_init::Float64
     tspan::Tuple{Float64, Float64}
     saveat::Array{Float64,1}
-    function SC_NoEF_Displacements(; σ_init::Float64=0.0, tspan::Tuple{Float64,Float64}=(0.0, 180.0), saveat::Array{Float64,1}=collect(0.0:5.0:180.0))
-        prob = SDEProblem(drift_NoEF!, noise!, [complex(0.0), complex(0.0)], tspan, Dict(:v=>1.0, :σ=>1.0, :λ=>1.3, :β=>10.0), noise_rate_prototype=[0.0,1.0])
-        return new(prob, σ_init, tspan, saveat)
+    function SingleCellSimulator(;
+        σ_init::Float64=0.0, 
+        tspan::Tuple{Float64,Float64}=(0.0, 180.0), 
+        saveat::Array{Float64,1}=collect(0.0:5.0:180.0),
+        emf::F=NOFIELD,
+        ) where F<:AbstractEMField
+
+        prob = SDEProblem(
+            emf,
+            noise!, 
+            [complex(0.0), complex(0.0)], 
+            tspan, 
+            Dict(:v=>1.0, :σ=>1.0, :λ=>1.3, :β=>10.0, :γ=>0.0),
+            noise_rate_prototype=noise_shape,
+            )
+        
+        M = typeof(emf)==NoEF ? SingleCellModel_NoEF : SingleCellModel_EF
+        return new{M}(prob, σ_init, tspan, saveat)
     end
 end
-import .LikelihoodFree.output_dimension
-output_dimension(::SC_NoEF_Displacements) = 3
 
 function ∇W(β::Float64, λ::Float64, x::Complex{Float64})::Complex{Float64}
     return β*(abs2(x)-1)*(abs2(x)-λ+1)*x
@@ -27,7 +54,6 @@ function drift_NoEF!(du, u, p, t)
     du[2] = -∇W(p[:β], p[:λ], u[2])
     return nothing
 end
-
 function noise!(du, u, p, t)
     du[2] = p[:σ]
     return nothing
@@ -64,7 +90,7 @@ function initial_conditions!(x0::Array{Complex{Float64}, 1}, sigma::T) where T<:
     return nothing
 end
 
-function (F::SC_NoEF_Displacements)(y::AbstractArray{Float64, 1}, m::SingleCellModel_NoEF)
+function (F::SingleCellSimulator)(y::AbstractArray{Float64, 1}, m::SingleCellModel_NoEF)
     F.prob.p[:v] = m[:polarised_speed]
     F.prob.p[:σ] = m[:σ]
     F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(m[:EB_on], m[:EB_off], m[:σ])
@@ -73,3 +99,17 @@ function (F::SC_NoEF_Displacements)(y::AbstractArray{Float64, 1}, m::SingleCellM
     sol = solve(F.prob, saveat=F.saveat, save_idxs=1)
     get_displacements!(y, sol.u)
 end
+function (F::SingleCellSimulator{SingleCellModel_EF})(y::AbstractArray{Float64, 1}, m::SingleCellModel_EF)
+    F.prob.p[:v] = m[:polarised_speed]
+    F.prob.p[:σ] = m[:σ]
+    F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(m[:EB_on], m[:EB_off], m[:σ])
+    F.prob.p[:γ] = 0.5*m[:EF_bias]*m[:σ]^2
+    initial_conditions!(F.prob.u0, F.σ_init)
+
+    sol = solve(F.prob, saveat=F.saveat, save_idxs=1)
+    get_displacements!(view(y, 1:3), sol.u)
+    get_angles!(view(y, 4:6), sol.u)
+end
+import .LikelihoodFree.output_dimension
+output_dimension(::SingleCellSimulator{SingleCellModel_NoEF}) = 3
+output_dimension(::SingleCellSimulator{SingleCellModel_EF}) = 6
