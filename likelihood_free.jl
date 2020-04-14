@@ -64,31 +64,33 @@ end
 
 export simulate, compare, simulate!, compare!
 
+# NB simulation is into a preallocated array: need to define (F::AbstractSimulator)(y, m) as an inplace mutation of y::Array{T,1}
 function simulate!(yy::AbstractArray{T,4}, F::AbstractSimulator{M,T}, m::M) where T where M
     size(yy, 2)==1 || error("Wrong sized preallocated array: only one parameter to be simulated")
-    for nDataPoint in axes(yy,4)
-        for nReplicate in axes(yy,3)
-            view(yy, :, 1, nReplicate, nDataPoint) .= F(m)
-        end
-    end
-    return NamedTuple()
+    yy_collect_replicates = reshape(yy, size(yy,1), :)
+    out = simulate!(yy_collect_replicates, F, m)
+    return out
 end
 function simulate!(yy::AbstractArray{T,4}, F::AbstractSimulator{M,T}, mm::AbstractArray{M,1}) where T where M
     numParameters = length(mm)
     size(yy, 2)==numParameters || error("Wrong sized pre-allocated array: $numParameters parameters to be simulated")
-    for nDataPoint in axes(yy,4)
-        for nReplicate in axes(yy,3)
-            for nParameter in axes(yy,2)
-                view(yy, :, nParameter, nReplicate, nDataPoint) .= F(mm[nParameter])
-            end
-        end
+
+    yy_collect_replicates = reshape(yy, size(yy,1), size(yy,2), :)
+    for nParameter in axes(yy_collect_replicates,2)
+        simulate!(view(yy_collect_replicates, :, nParameter, :), F, mm[nParameter])
+    end
+    return NamedTuple()
+end
+function simulate!(y::AbstractArray{T,2}, F::AbstractSimulator{M,T}, m::M) where T where M
+    for nReplicate in axes(y,2)
+        F(view(y, :, nReplicate), m)
     end
     return NamedTuple()
 end
 
 function simulate(F::AbstractSimulator{M,T}, m::M, K::Int64=1) where T where M
     dim = output_dimension(F)
-    y = Array{T,4}(undef, dim, 1, K, 1)
+    y = Array{T,2}(undef, dim, K)
     saved = simulate!(y, F, m)
     return merge((y=y,), saved)
 end
