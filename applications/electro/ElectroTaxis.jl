@@ -41,7 +41,6 @@ function get_displacements!(ss::AbstractArray{Float64, 1}, y::AbstractArray{Comp
     return nothing
 end
 
-
 function get_angles(y::AbstractArray{Complex{Float64}, 2})
     n = size(y,2)
     out = Array{Float64,2}(undef, 3, size(y,2))
@@ -52,14 +51,14 @@ function get_angles(y::AbstractArray{Complex{Float64}, 2})
 end
 function get_angles!(ss::AbstractArray{Float64, 1}, y::AbstractArray{Complex{Float64}, 1})
     dy = diff(y)
-    cosarg_dy = Array{Float64, 1}(undef, size(dy))
-    broadcast!(cosarg, cosarg_dy, dy)
-    ss[1] = cosarg(y[end])
-    ss[2] = mean(cosarg_dy)
-    ss[3] = std(cosarg_dy)
+    arg_dy = Array{Float64, 1}(undef, size(dy))
+    broadcast!(angle, arg_dy, dy)
+    ss[1] = angle(y[end])
+    ss[2] = mean(arg_dy)
+    ss[3] = std(arg_dy)
     return nothing
 end
-cosarg(x) = cos(angle(x))
+# cosarg(x) = cos(angle(x))
 
 
 export NoEF_trajectories, NoEF_displacements
