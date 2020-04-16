@@ -13,7 +13,7 @@ include("sampling_procedures.jl")
 
 # Need to apply a Monte Carlo weight to the generated parameters 
 export weight
-function weight(w::AbstractWeight{M}, m::M, y_obs)::NamedTuple{(:w,), Tuple{Float64}} where M where T
+function weight(w::AbstractWeight{M}, m::M, y_obs)::NamedTuple{(:w,), Tuple{Float64}} where M
     return (w = w(m, y_obs),)
 end
 function weight(w::AbstractWeight{M}, mm::AbstractArray{M,1}, y_obs)::NamedTuple where M

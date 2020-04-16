@@ -41,6 +41,17 @@ function compare(c::SyntheticLikelihood{T}, yy::AbstractArray{T,2}, y_obs)::Name
     return (w=w, logw=logw, sb_lh=sb_lh)
 end
 
+function compare(c::SyntheticLikelihood{T}, yy::AbstractArray{T,4}, y_obs)::NamedTuple where T
+    if size(yy,2)==1
+        yy_collect = reshape(yy, size(yy,1), :)
+        return compare(c, yy_collect, y_obs)
+    else
+        ww = Array{Float64,1}(undef, size(yy,2))
+        out = compare!(ww, c, yy, y_obs)
+        return merge((ww=ww,), out)
+    end
+end
+
 function compare!(ww::AbstractArray{Float64, 1}, c::SyntheticLikelihood{T}, yy::AbstractArray{T,4}, y_obs)::NamedTuple where T
     
     dim = size(yy,1)
