@@ -11,61 +11,65 @@ struct DistributionGenerator{M, D<:Distribution} <: AbstractGenerator{M}
     end
 end
 
-function (q::DistributionGenerator{M,D})()::M where M where D
-    return M(rand(q.d))
-end
 function rand(q::DistributionGenerator{M, D}) where M<:AbstractModel where D
-    return (m=q(),)
+    v = rand(q.d)
+    logq = logpdf(q.d, v)
+    return (m=M(v), logq=logq)
 end
-
-function rand!(mm::AbstractArray{M}, q::DistributionGenerator{M,D}) where M<:AbstractModel where D
-    xx = rand(q.d, length(mm))
+function rand!(mm::AbstractArray{M,1}, q::DistributionGenerator{M,D}) where M<:AbstractModel where D
+    logqq = Array{Float64}(undef, length(mm))
+    vv = rand(q.d, length(mm))
     if length(q.d)==1
-        for i in eachindex(mm)
-            mm[i] = M(xx[i])
-        end
+        logqq[:] .= logpdf.(q.d, vv)
+        mm[:] .= M.(vv)
     else
+        logqq = logpdf!(logqq, q.d, vv)
         for i in eachindex(mm)
-            mm[i] = M(view(xx,:,i))
+            mm[i] = M(view(vv,:,i))
         end
     end
-    return NamedTuple()
+    return (logqq=logqq,)
 end
 
-function make_array(mm::Array{M}) where M<:AbstractModel
-    dim = length(fieldnames(M))
+function make_array(m::M) where M<:AbstractModel
+    dim = length(m)
     if dim==1
-        T = fieldtypes(M)[1]
-        out = Vector{T}(undef, length(mm))
-        for i in eachindex(mm)
-            out[i] = mm[i][1]
-        end
+        return m[1]
     else
-        T = promote_type(fieldtypes(M)...)
-        out = Array{T,2}(undef, dim, length(mm))
-        vals = values.(mm)
-        for i in eachindex(mm)
-            for j in 1:dim
-                out[j,i] = vals[i][j]
-            end
-        end
+        return [values(m)...]
     end
-    return out
+end
+function make_array(mm::Array{M,1}) where M<:AbstractModel
+    dim = length(mm[1])
+    if dim==1
+        return make_array.(mm)
+    else
+        value_array = make_array.(mm)
+        return hcat(value_array...)
+    end
 end
 
-function unnormalised_importance_weight(q::DistributionGenerator{M,D}, m::M) where M<:AbstractModel where D
-    dim = length(q.d)
-    p = (dim==1 ? pdf(q.d, values(m)[1]) : pdf(q.d, [values(m)...]))
-    return (p=p,)
+function logpdf(q::DistributionGenerator{M,D}, m::M) where M where D
+    v = make_array(m)
+    return (logq = logpdf(q.d, v),)
 end
-function unnormalised_importance_weight!(pp::AbstractArray{Float64,1}, q::DistributionGenerator{M, D}, mm::AbstractArray{M}) where M where D
-    dim = length(q.d)
-    mm_array = make_array(mm)
-    pp[:] .= (dim==1 ? pdf.(q.d, mm_array) : pdf(q.d, mm_array))
+function logpdf(q::DistributionGenerator{M,D}, mm::AbstractArray{M,1}) where M where D
+    dim = length(mm[1])
+    v = make_array(mm)
+    if dim==1
+        logqq = logpdf.(q.d, v)
+    else
+        logqq = logpdf(q.d, v)
+    end
+    return (logqq=logqq, )
+end
+function logpdf!(logqq, q::DistributionGenerator{M,D}, mm::AbstractArray{M,1}) where M where D
+    dim = length(mm[1])
+    v = make_array(mm)
+    if dim==1
+        broadcast!(logpdf, logqq, q.d, v)
+    else
+        logpdf!(logqq, q.d, v)
+    end
     return NamedTuple()
-end
-function unnormalised_importance_weight(q::DistributionGenerator{M,D}, mm::AbstractArray{M}) where M<:AbstractModel where D
-    pp = Array{Float64,1}(undef, size(mm))
-    save = unnormalised_importance_weight!(pp, q, mm)
-    return merge((pp=pp,), save)
 end

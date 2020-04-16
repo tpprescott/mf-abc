@@ -4,7 +4,8 @@
 # Generics for AbstractGenerator
 
 import Distributions.rand, Distributions.rand!
-export rand
+import Distributions.logpdf, Distributions.logpdf!
+export rand, rand!, logpdf, logpdf!
 
 function rand(q::AbstractGenerator{M})::NamedTuple where M<:AbstractModel
     return (m=q(),)
@@ -21,20 +22,21 @@ function rand(q::AbstractGenerator{M}, N::Int64)::NamedTuple where M<:AbstractMo
     return merge((mm=mm,), save)
 end
 
-function unnormalised_importance_weight(q::AbstractGenerator{M}, m::M)::NamedTuple where M<:AbstractModel
-    return (p=q(m),)
+function logpdf(q::AbstractGenerator{M}, m::M) where M
+    error("Implement logpdf for $(typeof(q)), returning a named tuple")
 end
-function unnormalised_importance_weight!(pp::AbstractArray{M}, q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
+function logpdf!(logqq::AbstractArray{Float64,1}, q::AbstractGenerator{M}, mm::AbstractArray{M,1}) where M
     for i in eachindex(mm)
-        pp[i] = unnormalised_importance_weight(q, mm[i])[:p]
+        logqq[i] = logpdf(q, mm[i])[:logq]
     end
     return NamedTuple()
 end
-function unnormalised_importance_weight(q::AbstractGenerator{M}, mm::AbstractArray{M})::NamedTuple where M<:AbstractModel
-    pp = Array{Float64}(undef, size(mm))
-    save = unnormalised_importance_weight!(pp, q, mm)
-    return merge((pp=pp,), save)
+function logpdf(q::AbstractGenerator{M}, mm::AbstractArray{M,1}) where M
+    logqq = Array{Float64,1}(undef, length(mm))
+    save = logpdf!(logqq, q, mm)
+    return merge((logqq=logqq, ), save)
 end
 
 include("generate_parameters_distributions.jl")
+include("generate_parameters_perturbations.jl")
 include("generate_parameters_smc.jl")
