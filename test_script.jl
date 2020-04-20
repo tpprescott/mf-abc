@@ -8,8 +8,12 @@ q2 = DistributionGenerator(Tom2, MvNormal(2, 1.0))
 
 y_obs = Array{Float64,1}([0.4])
 
-struct TomF <: AbstractSimulator{TomM, Float64} end
-(::TomF)(m::TomM)::Float64 = m.x + randn()
+struct TomF <: AbstractSimulator{Float64} end
+function (::TomF)(y::AbstractArray{Float64,1}; x::Float64, pars...)::NamedTuple 
+    n = randn()
+    y[1] = x + n
+    return (n=n, )
+end
 F = TomF()
 
 #struct TomF2 <: AbstractSimulator{Tom2, TomU, Float64} end

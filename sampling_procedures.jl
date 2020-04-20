@@ -5,7 +5,7 @@ function _batch!(
     ww::AbstractArray{Float64},
     y_obs::Y,
     q::AbstractGenerator{M},
-    w::AbstractWeight{M},
+    w::AbstractWeight,
 )::NamedTuple where M where Y
 
     save1 = rand!(mm, q)
@@ -18,7 +18,7 @@ export rejection_sample, importance_sample
 function rejection_sample(
     y_obs::Y,
     q::AbstractGenerator{M},
-    w::AbstractWeight{M},
+    w::AbstractWeight,
     N::Int64,
 ) where M where Y
     mm = Array{M}(undef, N)
@@ -32,7 +32,7 @@ function importance_sample(
     y_obs::Y,
     prior::AbstractGenerator{M},
     proposal::AbstractGenerator{M},
-    w::AbstractWeight{M},
+    w::AbstractWeight,
     N::Int64,
 ) where M where Y
     mm = Array{M, 1}(undef, N)
@@ -63,7 +63,7 @@ function mcmc_sample(mcmc::AbstractMCMCChain{M}, y_obs, initial_vec::Array{M,1};
 end
 
 export GaussianWalk
-struct GaussianWalk{M<:AbstractModel, D<:DistributionGenerator{M}, W<:AbstractWeight{M}} <: AbstractMCMCChain{M}
+struct GaussianWalk{M<:AbstractModel, D<:DistributionGenerator{M}, W<:AbstractWeight} <: AbstractMCMCChain{M}
     prior::D
     w::W
     N::Int64
@@ -101,7 +101,7 @@ end
 
 struct Haario{M} <: AbstractMCMCChain{M}
     prior::AbstractGenerator{M}
-    w::AbstractWeight{M}
+    w::AbstractWeight
     N::Int64
     covMat0::Matrix{Float64}
     t0::Int64
