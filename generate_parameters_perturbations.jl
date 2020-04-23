@@ -1,39 +1,30 @@
 using Distributions
-import Distributions: rand, rand!
+import Distributions: rand
 
 export PerturbationKernel, recentre!
-struct PerturbationKernel{M, DP} <: AbstractGenerator{M}
+struct PerturbationKernel{Θ} <: AbstractGenerator{Θ}
     d::MvNormal
-    prior::DP
 end
-function PerturbationKernel(m::M, covMat, prior::DistributionGenerator{M,D}) where M where D
-    d = MvNormal([values(m)...], covMat)
-    return PerturbationKernel{M,D}(d, prior.d)
+
+function PerturbationKernel(θ::Θ, covMat) where Θ
+    d = MvNormal([values(θ)...], covMat)
+    return PerturbationKernel{Θ}(d)
 end
-function recentre!(K::PerturbationKernel{M,DP}, m::M) where M<:AbstractModel where DP
-    for (i,v) in enumerate(values(m))
+function recentre!(K::PerturbationKernel{Θ}, θ::Θ) where Θ<:AbstractModel
+    for (i,v) in enumerate(values(θ))
         K.d.μ[i] = v
     end
 end
 
-function rand(K::PerturbationKernel{M,DP}) where M where DP
+function (K::PerturbationKernel{Θ})(; prior::AbstractGenerator{Θ}, kwargs...) where Θ
     v = rand(K.d)
-    logp = logpdf(K.prior, v)
-    isfinite(logp) || (return rand(K))
+    θ = Θ(v)
+    logp = logpdf(prior, θ)
+#    isfinite(logp) || (return K(; prior=prior, kwargs...))
     logq = logpdf(K.d, v)
-    return (m=M(v), logq=logq, logp=logp)
+    return (θ=θ, logq=logq, logp=logp)
 end
-function rand!(mm::AbstractArray{M}, q::AbstractGenerator{M})::NamedTuple where M<:AbstractModel
-    N = length(mm)
-    logpp = Array{Float64, 1}(undef, N)
-    logqq = Array{Float64, 1}(undef, N)
-    for i in eachindex(mm)
-        mm[i], logqq[i], logpp[i] = values(rand(q))
-    end
-    return (logqq = logqq, logpp = logpp)
-end
-
-function logpdf(K::PerturbationKernel{M,DP}, m::M) where M where DP
-    v = make_array(m)
+function logpdf(K::PerturbationKernel{Θ}, θ::Θ) where Θ
+    v = make_array(θ)
     return logpdf(K.d, v)
 end

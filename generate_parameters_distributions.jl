@@ -2,74 +2,32 @@ using Distributions
 import Distributions.rand, Distributions.rand!
 
 export DistributionGenerator
-struct DistributionGenerator{M, D<:Distribution} <: AbstractGenerator{M}
+struct DistributionGenerator{Θ, D<:Distribution} <: AbstractGenerator{Θ}
     d::D
-    function DistributionGenerator(::Type{M}, x::D) where M where D<:Distribution
-        N = length(fieldnames(M))
+    function DistributionGenerator(::Type{Θ}, x::D) where Θ where D<:Distribution
+        N = length(fieldnames(Θ))
         length(x)==N || error("$N names for $(length(x)) variables")
-        return new{M,D}(x)
+        return new{Θ, D}(x)
     end
 end
 
-function rand(q::DistributionGenerator{M, D}) where M<:AbstractModel where D
+function (q::DistributionGenerator{Θ, D})(; prior::AbstractGenerator{Θ}, kwargs...) where Θ<:AbstractModel where D
     v = rand(q.d)
+    θ = Θ(v)
     logq = logpdf(q.d, v)
-    return (m=M(v), logq=logq)
+    logp = prior==q ? logq : logpdf(prior, θ)
+#    isfinite(logp) || (return q(; prior=prior, kwargs...))
+    return (θ=θ, logq=logq, logp=logp)
 end
-function rand!(mm::AbstractArray{M,1}, q::DistributionGenerator{M,D}) where M<:AbstractModel where D
-    logqq = Array{Float64}(undef, length(mm))
-    vv = rand(q.d, length(mm))
-    if length(q.d)==1
-        logqq[:] .= logpdf.(q.d, vv)
-        mm[:] .= M.(vv)
-    else
-        logqq = logpdf!(logqq, q.d, vv)
-        for i in eachindex(mm)
-            mm[i] = M(view(vv,:,i))
-        end
-    end
-    return (logqq=logqq,)
+function logpdf(q::DistributionGenerator{Θ, D}, θ::Θ) where Θ<:AbstractModel where D
+    v = make_array(θ)
+    return logpdf(q.d, v)
 end
-
-function make_array(m::M) where M<:AbstractModel
-    dim = length(m)
+function make_array(θ::Θ) where Θ<:AbstractModel
+    dim = length(θ)
     if dim==1
-        return m[1]
+        return θ[1]
     else
-        return [values(m)...]
+        return [values(θ)...]
     end
-end
-function make_array(mm::Array{M,1}) where M<:AbstractModel
-    dim = length(mm[1])
-    if dim==1
-        return make_array.(mm)
-    else
-        value_array = make_array.(mm)
-        return hcat(value_array...)
-    end
-end
-
-function logpdf(q::DistributionGenerator{M,D}, m::M) where M where D
-    v = make_array(m)
-    return (logq = logpdf(q.d, v),)
-end
-function logpdf(q::DistributionGenerator{M,D}, mm::AbstractArray{M,1}) where M where D
-    dim = length(mm[1])
-    v = make_array(mm)
-    if dim==1
-        logqq = logpdf.(q.d, v)
-    else
-        logqq = logpdf(q.d, v)
-    end
-    return (logqq=logqq, )
-end
-function logpdf!(logqq, q::DistributionGenerator{M,D}, mm::AbstractArray{M,1}) where M where D
-    dim = length(mm[1])
-    v = make_array(mm)
-    if dim==1
-        broadcast!(logpdf, logqq, q.d, v)
-    else
-        logpdf!(logqq, q.d, v)
-    end
-    return NamedTuple()
 end

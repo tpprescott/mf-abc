@@ -1,112 +1,80 @@
 using Distributed
 
-function _batch!(
-    mm::AbstractArray{M},
-    ww::AbstractArray{Float64},
-    y_obs::Y,
-    q::AbstractGenerator{M},
-    w::AbstractWeight,
-)::NamedTuple where M where Y
-
-    save1 = rand!(mm, q)
-    save2 = weight!(ww, w, mm, y_obs)
-    return merge(save1, save2)
-end
-
 export rejection_sample, importance_sample
 
-function rejection_sample(
-    y_obs::Y,
-    q::AbstractGenerator{M},
-    w::AbstractWeight,
-    N::Int64,
-) where M where Y
-    mm = Array{M}(undef, N)
-    ww = Array{Float64}(undef, N)
-    save = _batch!(mm, ww, y_obs, q, w)
-    output = merge((mm=mm, ww=ww), save)
-    return output
+function batch(Σ::MonteCarloProposal, N::Int64; parallel::Bool=false)
+    b = parallel ? pmap(Σ, Base.OneTo(N)) : map(Σ, Base.OneTo(N))
+    return table(b)
+end
+
+export StopCondition
+struct StopCondition{F,N} 
+    f::F
+    n::N
+end
+function (stop::StopCondition)(sample)::Bool
+    stop.f(sample) >= stop.n
 end
 
 function importance_sample(
-    y_obs::Y,
-    prior::AbstractGenerator{M},
-    proposal::AbstractGenerator{M},
-    w::AbstractWeight,
-    N::Int64,
-) where M where Y
-    mm = Array{M, 1}(undef, N)
-    ww = Array{Float64, 1}(undef, N)
-    save = _batch!(mm, ww, y_obs, proposal, w)
-
-    logpp = :logpp in keys(save) ? save[:logpp] : logpdf(prior, mm)
-    logqq = :logqq in keys(save) ? save[:logqq] : logpdf(proposal, mm)
-
-    ww .*= exp.(logpp)
-    ww ./= exp.(logqq)
-    return merge((mm=mm, ww=ww, logpp=logpp, logqq=logqq), save)
-end
-
-export AbstractMCMCChain, mcmc_sample
-abstract type AbstractMCMCChain{M<:AbstractModel} end
-function mcmc_sample(mcmc::AbstractMCMCChain{M}, y_obs, init_m::M) where M
-    error("Implement me.")
-end
-function mcmc_sample(mcmc::AbstractMCMCChain{M}, y_obs, NChains::Int64; parallel::Bool=false) where M
-    initial_vec = rand(mcmc.prior, NChains)[:mm]
-    return mcmc_sample(mcmc, y_obs, initial_vec; parallel=parallel)
-end
-function mcmc_sample(mcmc::AbstractMCMCChain{M}, y_obs, initial_vec::Array{M,1}; parallel::Bool=false) where M
-    F(init_m) = mcmc_sample(mcmc, y_obs, init_m)
-    chain_vec = parallel ? pmap(F, initial_vec) : map(F, initial_vec)
-    return chain_vec
-end
-
-export GaussianWalk
-struct GaussianWalk{M<:AbstractModel, D<:DistributionGenerator{M}, W<:AbstractWeight} <: AbstractMCMCChain{M}
-    prior::D
-    w::W
-    N::Int64
-    covMat::Matrix{Float64}
-end
-function mcmc_sample(mcmc::GaussianWalk{M}, y_obs, initial::M=rand(mcmc.prior)[:m]) where M
-    mm = Array{M, 1}(undef, mcmc.N)
-    logpp = Array{Float64, 1}(undef, mcmc.N)
-    logww = Array{Float64, 1}(undef, mcmc.N)
-
-    mm[1] = initial
-    logpp[1] = logpdf(mcmc.prior, mm[1])[:logq]
-    logww[1] = weight(mcmc.w, mm[1], y_obs)[:logw]
-    
-    # PerturbationKernel is MvNormal, centred on the current parameter value
-    # Symmetric, therefore do not need to worry about ratio of proposal likelihoods
-    K = PerturbationKernel(mm[1], mcmc.covMat, mcmc.prior)
-
-    for i in 2:mcmc.N
-        proposal = rand(K)
-        mm[i] = proposal[:m]
-        logpp[i] = proposal[:logp]
-        logww[i] = weight(mcmc.w, mm[i], y_obs)[:logw]
-        alpha = exp(logww[i] + logpp[i] - logww[i-1] - logpp[i-1])
-        if (rand()>alpha)
-            mm[i] = mm[i-1]
-            logpp[i] = logpp[i-1]
-            logww[i] = logww[i-1]
-        else
-            recentre!(K, mm[i])
-        end
+    Σ::MonteCarloProposal,
+    stop::StopCondition = StopCondition(length, 100);
+    parallel::Bool = false,
+    batch_size::Int64 = 10,
+)
+    sample = batch(Σ, batch_size, parallel=parallel)
+    while !stop(sample)
+        append!(rows(sample), rows(batch(Σ, batch_size, parallel=parallel)))
     end
-    return (mm=mm, logww=logww, logpp=logpp)
+    return sample
+end
+importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(Σ, StopCondition(f, n); kwargs...)
+
+# MCMC Sampling
+function Base.iterate(Σ::MonteCarloProposal)
+    initial_proposal = rand(Σ.prior)
+    b = weight(Σ.lh_set; initial_proposal...)
+    logw = 0.0
+    for b_i in b
+        logw += b_i[:logw]
+    end
+    isfinite(logw) || (return Base.iterate(Σ))
+    θ = initial_proposal[:θ]
+
+    initial_state = merge(initial_proposal, (logw=logw, weight_components=b))
+    out = merge((θ_accept = θ,), initial_state)
+    return out, initial_state
 end
 
-struct Haario{M} <: AbstractMCMCChain{M}
-    prior::AbstractGenerator{M}
-    w::AbstractWeight
-    N::Int64
-    covMat0::Matrix{Float64}
-    t0::Int64
-    s_d::Float64
-    epsilon::Float64
+function Base.iterate(Σ::MonteCarloProposal, state::NamedTuple)
+    recentre!(Σ.q, state[:θ])
+    proposal = Σ()
+    logα = metropolis_hastings(state, proposal)
+    new_state = log(rand())<logα ? proposal : state
+    return merge((θ_accept = new_state[:θ],), proposal), new_state
 end
 
+function metropolis_hastings(state, proposal)
+    # Assuming we are only working with symmetric proposal distributions
+    return proposal[:logp] + proposal[:logw] - state[:logp] - state[:logw]
+end
 
+import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
+IteratorSize(::Type{MonteCarloProposal}) = IsInfinite()
+IteratorEltype(::Type{MonteCarloProposal}) = HasEltype()
+eltype(::Type{MonteCarloProposal}) = NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :weight_components)}
+
+export mcmc_sample
+function mcmc_sample(
+    Σ::MonteCarloProposal,
+    stop::StopCondition = StopCondition(length, 100)
+)   
+    σ = Iterators.Stateful(Σ)
+
+    sample = [first(σ)]
+    while !stop(sample)
+        push!(sample, first(σ))
+    end
+    return table(sample)
+end
+mcmc_sample(Σ::MonteCarloProposal, f, n; kwargs...) = mcmc_sample(Σ, StopCondition(f, n); kwargs...)
