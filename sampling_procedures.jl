@@ -1,9 +1,32 @@
 using Distributed
 
-export rejection_sample, importance_sample
+export importance_sample
 
-function batch(Σ::MonteCarloProposal, N::Int64; parallel::Bool=false)
-    b = parallel ? pmap(Σ, Base.OneTo(N)) : map(Σ, Base.OneTo(N))
+export MonteCarloProposal
+struct MonteCarloProposal{Θ<:AbstractModel, Π<:AbstractGenerator{Θ}, Q<:AbstractGenerator{Θ}, W<:LikelihoodObservationSet}
+    prior::Π
+    q::Q
+    lh_set::W
+end
+MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, L_set::NTuple{N, AbstractLikelihoodFunction}, y_obs_set::NTuple{N, X where X}) where N where Θ = MonteCarloProposal(prior, q, (L_set, y_obs_set))
+MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, lh_fun::LikelihoodObservationPair...) where Θ = MonteCarloProposal(prior, q, zip(lh_fun...)...)
+MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, w::AbstractLikelihoodFunction, y_obs) where Θ = MonteCarloProposal(prior, q, (w, y_obs))
+MonteCarloProposal(prior::AbstractGenerator{Θ}, args...) where Θ = MonteCarloProposal(prior, prior, args...)
+function MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, args...) where Θ
+    for x_i in args
+        println(x_i)
+    end
+end
+
+function (Σ::MonteCarloProposal)(i=1; kwargs...)
+    proposal::NamedTuple{(:θ, :logq, :logp)} = rand(Σ.q; prior=Σ.prior, kwargs...)
+    weight = likelihood(Σ.lh_set, proposal[:θ]; kwargs...)
+    return merge(proposal, weight)
+end
+
+function batch(Σ::MonteCarloProposal, N::Int64; parallel::Bool=false, kwargs...)
+    Σ_opt(i) = Σ(i; kwargs...)
+    b = parallel ? pmap(Σ_opt, Base.OneTo(N)) : map(Σ_opt, Base.OneTo(N))
     return table(b)
 end
 
@@ -21,10 +44,11 @@ function importance_sample(
     stop::StopCondition = StopCondition(length, 100);
     parallel::Bool = false,
     batch_size::Int64 = 10,
+    kwargs...
 )
-    sample = batch(Σ, batch_size, parallel=parallel)
+    sample = batch(Σ, batch_size; parallel=parallel, kwargs...)
     while !stop(sample)
-        append!(rows(sample), rows(batch(Σ, batch_size, parallel=parallel)))
+        append!(rows(sample), rows(batch(Σ, batch_size; parallel=parallel, kwargs...)))
     end
     return sample
 end
@@ -33,22 +57,19 @@ importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(�
 # MCMC Sampling
 function Base.iterate(Σ::MonteCarloProposal)
     initial_proposal = rand(Σ.prior)
-    b = weight(Σ.lh_set; initial_proposal...)
-    logw = 0.0
-    for b_i in b
-        logw += b_i[:logw]
-    end
-    isfinite(logw) || (return Base.iterate(Σ))
     θ = initial_proposal[:θ]
 
-    initial_state = merge(initial_proposal, (logw=logw, weight_components=b))
+    weight = likelihood(Σ.lh_set, θ; loglikelihood=true)
+    isfinite(weight[:logw]) || (return Base.iterate(Σ))
+
+    initial_state = merge(initial_proposal, weight)
     out = merge((θ_accept = θ,), initial_state)
     return out, initial_state
 end
 
 function Base.iterate(Σ::MonteCarloProposal, state::NamedTuple)
     recentre!(Σ.q, state[:θ])
-    proposal = Σ()
+    proposal = Σ(; loglikelihood=true)
     logα = metropolis_hastings(state, proposal)
     new_state = log(rand())<logα ? proposal : state
     return merge((θ_accept = new_state[:θ],), proposal), new_state
@@ -62,7 +83,7 @@ end
 import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
 IteratorSize(::Type{MonteCarloProposal}) = IsInfinite()
 IteratorEltype(::Type{MonteCarloProposal}) = HasEltype()
-eltype(::Type{MonteCarloProposal}) = NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :weight_components)}
+eltype(::Type{MonteCarloProposal}) = NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :w_components, :L)}
 
 export mcmc_sample
 function mcmc_sample(

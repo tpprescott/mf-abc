@@ -1,4 +1,5 @@
 using Distributions: Uniform, MvNormal, Normal, product_distribution
+using LinearAlgebra: diagm
 
 TomM = NamedTuple{(:x, :σ), Tuple{Float64,Float64}}
 q = DistributionGenerator(TomM, product_distribution([Normal(0.5,0.1), Normal(0.5, 0.1)]))
@@ -14,14 +15,12 @@ end
 F = TomF()
 
 using Distances
-c_abc = ABCComparison(Euclidean(), 0.5)
-w_abc = LikelihoodFreeWeight(F, c_abc, 10)
 
-c_sl = SyntheticLikelihood()
-w_sl = LikelihoodFreeWeight(F, c_sl, 50)
+L_abc = ABCLikelihood(F, Euclidean(), 0.1, num_simulations = 10*length(y_obs))
+L_sl = BayesianSyntheticLikelihood(F, num_simulations = 1000)
 
-Σ_abc = MonteCarloProposal(prior, q, w_abc, y_obs)
-Σ_sl = MonteCarloProposal(prior, q, w_sl, y_obs)
+Σ_abc = MonteCarloProposal(prior, q, L_abc, y_obs)
+Σ_sl = MonteCarloProposal(prior, q, L_sl, y_obs)
 
-K = PerturbationKernel{TomM}(MvNormal(zeros(2), LinearAlgebra.diagm([0.1,0.1])))
-Σ = MonteCarloProposal(prior, K, w_sl, y_obs)
+K = PerturbationKernel{TomM}(MvNormal(zeros(2), diagm([0.1,0.1])))
+Σ = MonteCarloProposal(prior, K, L_sl, y_obs)

@@ -1,28 +1,38 @@
-module SyntheticBayes
-using ..LikelihoodFree
-
 using Distributions
 using Statistics
 # MvNormal(μ::Float64, σ2::Float64) = Normal(μ, sqrt(σ2))
 
-export SyntheticLikelihood, SyntheticBayesWeight
-struct SyntheticLikelihood <: AbstractComparison end
+export BayesianSyntheticLikelihood
+struct BayesianSyntheticLikelihood{F, Θ<:Union{AbstractModel, Nothing}, SimOutput<:Union{NamedTuple, Nothing}} <: LikelihoodFreeLikelihoodFunction{F}
+    f::F
+    K::Int64
+    θ::Θ
+    y::SimOutput
+    function BayesianSyntheticLikelihood(f::F; num_simulations=100) where F
+        return new{F, Nothing, Nothing}(f, num_simulations, nothing, nothing)
+    end
+    function BayesianSyntheticLikelihood(f::F, θ::Θ, y::SimOutput) where F where Θ where SimOutput
+        return new{F, Θ, SimOutput}(f, length(y.y), θ, y)
+    end
+    function BayesianSyntheticLikelihood(L::BayesianSyntheticLikelihood{F}, θ::Θ, y::SimOutput) where F where Θ where SimOutput
+        return new{F, Θ, SimOutput}(L.f, length(y.y), θ, y)
+    end
+end
 
-SyntheticBayesWeight{Simulator} = LikelihoodFreeWeight{Simulator, SyntheticLikelihood}
-SyntheticBayesWeight(F::Simulator, K::Int64=1) where Simulator = LikelihoodFreeWeight(F, SyntheticLikelihood(), K)
+function (L::BayesianSyntheticLikelihood)(θ::AbstractModel, args...; kwargs...)
+    sims = simulate(L.f, L.K; θ=θ, kwargs...)
+    return BayesianSyntheticLikelihood(L, θ, sims)
+end
 
-function (C::SyntheticLikelihood)(y_obs::Array{Array{T,1},1}, y::Array{Array{T,1},1}; kwargs...) where T
+function (L::BayesianSyntheticLikelihood)(y_obs::Array{Array{T,1},1}; loglikelihood::Bool, kwargs...) where T
 
+    y::Array{Array{T,1}} = L.y.y
     length(y)//length(y_obs) >= 10 || (@warn "Only $(length(y)) simulations for $(length(y_obs)) observations.")
 
     μ = mean(y)
     Σ = cov(y)
     sb_lh = MvNormal(μ, Σ)
-    logw_vec = logpdf.(Ref(sb_lh), y_obs)
-    logw = sum(logw_vec)
-    w = exp(logw)
 
-    return (w=w, logw=logw, sb_lh=sb_lh)
-end
-
+    logw = sum(broadcast(logpdf, Ref(sb_lh), y_obs))
+    return loglikelihood ? logw : exp(logw)
 end
