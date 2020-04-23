@@ -18,9 +18,13 @@ function MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{�
     end
 end
 
-function (Σ::MonteCarloProposal)(i=1; kwargs...)
+function (Σ::MonteCarloProposal)(i=1; loglikelihood::Bool=false, kwargs...)
     proposal::NamedTuple{(:θ, :logq, :logp)} = rand(Σ.q; prior=Σ.prior, kwargs...)
-    weight = likelihood(Σ.lh_set, proposal[:θ]; kwargs...)
+    if isfinite(proposal.logp)
+        weight = likelihood(Σ.lh_set, proposal[:θ]; loglikelihood=loglikelihood, kwargs...)
+    else
+        weight = loglikelihood ? (logw=-Inf, L=Σ.lh_set[1]) : (w=0.0, L=Σ.lh_set[1])
+    end
     return merge(proposal, weight)
 end
 
