@@ -1,4 +1,4 @@
-using DifferentialEquations: SDEProblem, solve
+using DifferentialEquations
 
 export AbstractEMField, NoEF
 
@@ -34,12 +34,18 @@ export SingleCellSimulator
 # abstract type SingleCellSimulator{M, T, F<:EMField} <: AbstractSimulator{M, T} end
 
 const noise_shape = [complex(0.0), complex(1.0)]
-struct SingleCellSimulator{M<:SingleCellModel} <: AbstractSimulator{M, Float64}
+struct SingleCellSimulator <: AbstractSimulator
     prob::SDEProblem
     σ_init::Float64
     tspan::Tuple{Float64, Float64}
     saveat::Array{Float64,1}
+    # Summary functions
+    displacements::Bool
+    angles::Bool
+
     function SingleCellSimulator(;
+        displacements::Bool=true,
+        angles::Bool=false,
         σ_init::Float64=0.0, 
         tspan::Tuple{Float64,Float64}=(0.0, 180.0), 
         saveat::Array{Float64,1}=collect(0.0:5.0:180.0),
@@ -55,8 +61,7 @@ struct SingleCellSimulator{M<:SingleCellModel} <: AbstractSimulator{M, Float64}
             noise_rate_prototype=noise_shape,
             )
         
-        M = typeof(emf)==NoEF ? SingleCellModel_NoEF : SingleCellModel_EF
-        return new{M}(prob, σ_init, tspan, saveat)
+        return new(prob, σ_init, tspan, saveat, displacements, angles)
     end
 end
 
@@ -99,31 +104,22 @@ end
 function get_β(EB_on, σ, λ)
     return -6.0 * (σ^2) * EB_on / (((λ-1)^2)*(λ-4))
 end
-function initial_conditions!(x0::Array{Complex{Float64}, 1}, sigma::T) where T<:Real
+function initial_conditions!(x0::Array{Complex{Float64}, 1}, sigma)
     x0[2] = sigma*complex(randn(), randn())
     return nothing
 end
 
-function (F::SingleCellSimulator)(y::AbstractArray{Float64, 1}, m::SingleCellModel_NoEF)
-    F.prob.p[:v] = m[:polarised_speed]
-    F.prob.p[:σ] = m[:σ]
-    F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(m[:EB_on], m[:EB_off], m[:σ])
-    initial_conditions!(F.prob.u0, F.σ_init)
+function (F::SingleCellSimulator)(; polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64, EF_bias::Float64=0.0, kwargs...)
+    F.prob.p[:v] = polarised_speed
+    F.prob.p[:σ] = σ
+    F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(EB_on, EB_off, σ)
+    F.prob.p[:γ] = 0.5*EF_bias*σ^2
+    F.prob.u0[2] = F.σ_init*complex(randn(), randn())
 
-    sol = solve(F.prob, saveat=F.saveat, save_idxs=1)
-    get_displacements!(y, sol.u)
+    sol = solve(F.prob, saveat=F.saveat, save_idxs=1, save_noise=true)
+    summary = Array{Float64,1}()
+    F.displacements && append!(summary, get_displacements(sol.u))
+    F.angles && append!(summary, get_angles(sol.u))
+    isempty(summary) && error("Nothing returned by simulation")
+    return (y=summary, u0=copy(sol.prob.u0), W=NoiseWrapper(sol.W))
 end
-function (F::SingleCellSimulator{SingleCellModel_EF})(y::AbstractArray{Float64, 1}, m::SingleCellModel_EF)
-    F.prob.p[:v] = m[:polarised_speed]
-    F.prob.p[:σ] = m[:σ]
-    F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(m[:EB_on], m[:EB_off], m[:σ])
-    F.prob.p[:γ] = 0.5*m[:EF_bias]*m[:σ]^2
-    initial_conditions!(F.prob.u0, F.σ_init)
-
-    sol = solve(F.prob, saveat=F.saveat, save_idxs=1)
-    get_displacements!(view(y, 1:3), sol.u)
-    get_angles!(view(y, 4:6), sol.u)
-end
-import .LikelihoodFree.output_dimension
-output_dimension(::SingleCellSimulator{SingleCellModel_NoEF}) = 3
-output_dimension(::SingleCellSimulator{SingleCellModel_EF}) = 6
