@@ -8,7 +8,7 @@ prior = DistributionGenerator(TomM, product_distribution([Uniform(0,1), Uniform(
 y_obs = [[0.1, 0.12] .+ 0.2*randn(2) for i in 1:10]
 
 struct TomF <: AbstractSimulator end
-function (::TomF)(K::Int64; x::Float64, σ::Float64, n=randn(2), kwargs...)::NamedTuple 
+function (::TomF)(; x::Float64, σ::Float64, n=randn(2), kwargs...)::NamedTuple 
     y = x .+ σ*n
     return (y=y, n=n)
 end

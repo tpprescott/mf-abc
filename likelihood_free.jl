@@ -1,6 +1,6 @@
 module LikelihoodFree
 
-using IndexedTables, Distributed
+using IndexedTables, Distributed, ProgressMeter
 export select
 
 export AbstractModel, AbstractGenerator, AbstractLikelihoodFunction
@@ -64,7 +64,7 @@ function simulate(F::AbstractSimulator, numReplicates::Int64=1; θ::AbstractMode
     I_kw = Iterators.repeated(kwargs)
     I = zip(I_F, I_θ, I_kw)
 
-    R = pmap(_simulate, Iterators.take(I, numReplicates))
+    R = @showprogress pmap(_simulate, Iterators.take(I, numReplicates))
     t = table(R)
     return columns(t)
 end
