@@ -65,8 +65,8 @@ importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(�
 # MCMC Sampling
 
 import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
-IteratorSize(::Type{MonteCarloProposal}) = IsInfinite()
-IteratorEltype(::Type{MonteCarloProposal}) = HasEltype()
+IteratorSize(::Type{Σ}) where Σ<:MonteCarloProposal = IsInfinite()
+IteratorEltype(::Type{Σ}) where Σ<:MonteCarloProposal = HasEltype()
 function eltype(::Type{MonteCarloProposal{
     Θ, Π, Q, Tuple{LH, Y}
 }}) where {Θ, Π, Q, Y} where LH <: NTuple{N, AbstractLikelihoodFunction} where N
