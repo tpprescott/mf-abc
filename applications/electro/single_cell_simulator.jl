@@ -5,21 +5,23 @@ export AbstractEMField, NoEF
 # For every concrete Field<:AbstractEMField we need to be able to call
 # (emf::Field)(t::Float64)::Complex{Float64}
 abstract type AbstractEMField end
-function (emf::Field)(du, u, p, t) where Field <: AbstractEMField
-    drift_NoEF!(du, u, p, t)
-    du[2] += p[:γ]*emf(t)
-    return nothing
-end
+function drift(emf::AbstractEMField)
+    f = function (du, u, p, t)
+        drift_NoEF!(du, u, p, t)
+        du[2] += p.[:γ]*emf(t)
+    end
+    return f
+end 
 
 export NoEF, ConstantEF, StepEF
 
 struct NoEF <: AbstractEMField end
 const NOFIELD = NoEF()
+drift(::NoEF) = drift_NoEF!
 (::NoEF)(t) = complex(0.0)
-(::NoEF)(du, u, p, t) = drift_NoEF!(du, u, p, t)
 
 struct ConstantEF <: AbstractEMField
-x::Complex{Float64}
+    x::Complex{Float64}
 end
 (emf::ConstantEF)(t) = emf.x
 
@@ -53,7 +55,7 @@ struct SingleCellSimulator <: AbstractSimulator
         ) where F<:AbstractEMField
 
         prob = SDEProblem(
-            emf,
+            drift(emf),
             noise!, 
             [complex(0.0), complex(0.0)], 
             tspan, 
