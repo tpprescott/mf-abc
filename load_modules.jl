@@ -1,8 +1,9 @@
-include("likelihood_free.jl")
-include("applications/electro/ElectroTaxis.jl")
+using Distributed
+@everywhere include("likelihood_free.jl")
+@everywhere include("applications/electro/ElectroTaxis.jl")
 using .LikelihoodFree
 using .ElectroTaxis
-using LinearAlgebra, Distributed, Distances, Distributions, DifferentialEquations, IndexedTables, Plots
+using LinearAlgebra, Distances, Distributions, DifferentialEquations, IndexedTables, Plots
 
 prior = DistributionGenerator(SingleCellModel_NoEF, product_distribution([
     Uniform(0,2), Uniform(0,5), Uniform(0,5), Uniform(0,2)
