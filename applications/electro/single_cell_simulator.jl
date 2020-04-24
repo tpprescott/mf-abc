@@ -8,7 +8,7 @@ abstract type AbstractEMField end
 function drift(emf::AbstractEMField)
     f = function (du, u, p, t)
         drift_NoEF!(du, u, p, t)
-        du[2] += p.[:γ]*emf(t)
+        du[2] += p[:γ]*emf(t)
     end
     return f
 end 
