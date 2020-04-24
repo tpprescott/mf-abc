@@ -2,10 +2,10 @@ using DifferentialEquations
 
 export AbstractEMField, NoEF
 
-# For every concrete Field<:EMField we need to be able to call
+# For every concrete Field<:AbstractEMField we need to be able to call
 # (emf::Field)(t::Float64)::Complex{Float64}
 abstract type AbstractEMField end
-function (emf::AbstractEMField)(du, u, p, t)
+function (emf::Field)(du, u, p, t) where Field <: AbstractEMField
     drift_NoEF!(du, u, p, t)
     du[2] += p[:γ]*emf(t)
     return nothing
