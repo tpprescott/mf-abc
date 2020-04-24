@@ -1,6 +1,6 @@
 module LikelihoodFree
 
-using IndexedTables
+using IndexedTables, Distributed
 export select
 
 export AbstractModel, AbstractGenerator, AbstractLikelihoodFunction
@@ -59,11 +59,17 @@ export simulate
 
 # Fallback: implement (F::AbstractSimulator)(; parameters..., noise..., other_kwargs...)
 function simulate(F::AbstractSimulator, numReplicates::Int64=1; θ::AbstractModel, kwargs...)
-    t = table(F.(1:numReplicates; θ..., kwargs...))
+    I_F = Iterators.repeated(F)
+    I_θ = Iterators.repeated(θ)
+    I_kw = Iterators.repeated(kwargs)
+    I = zip(I_F, I_θ, I_kw)
+
+    R = pmap(_simulate, Iterators.take(I, numReplicates))
+    t = table(R)
     return columns(t)
 end
-function (F::AbstractSimulator)(i::Int64; kwargs...)
-    return F(; kwargs...)
+function _simulate((F, θ, kwargs))
+    return F(; θ..., kwargs...)
 end
 
 include("abc.jl")

@@ -1,5 +1,3 @@
-using Distributed
-
 export importance_sample
 
 export MonteCarloProposal
@@ -18,21 +16,27 @@ function MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{�
     end
 end
 
-function (Σ::MonteCarloProposal)(i=1; loglikelihood::Bool=false, kwargs...)
+function (Σ::MonteCarloProposal)(; loglikelihood::Bool=false, kwargs...)
     proposal::NamedTuple{(:θ, :logq, :logp)} = rand(Σ.q; prior=Σ.prior, kwargs...)
     if isfinite(proposal.logp)
         weight = likelihood(Σ.lh_set, proposal[:θ]; loglikelihood=loglikelihood, kwargs...)
     else
-        weight = loglikelihood ? (logw=-Inf, L=Σ.lh_set[1]) : (w=0.0, L=Σ.lh_set[1])
+        L = Σ.lh_set[1]
+        N = length(L)
+        weight = loglikelihood ? (logw=-Inf, w_components=Tuple(fill(-Inf, N)), L=L) : (w=0.0, w_components=Tuple(fill(0.0, N)), L=L)
     end
     return merge(proposal, weight)
 end
 
-function batch(Σ::MonteCarloProposal, N::Int64; parallel::Bool=false, kwargs...)
-    Σ_opt(i) = Σ(i; kwargs...)
-    b = parallel ? pmap(Σ_opt, Base.OneTo(N)) : map(Σ_opt, Base.OneTo(N))
+function batch(Σ::MonteCarloProposal, N::Int64; kwargs...)
+    I_Σ = Iterators.repeated(Σ)
+    I_kw = Iterators.repeated(kwargs)
+    I = zip(I_Σ, I_kw)
+    
+    b = pmap(_batch, Iterators.take(I, N))
     return table(b)
 end
+_batch((Σ, kwargs)) = Σ(; kwargs...)
 
 export StopCondition
 struct StopCondition{F,N} 
@@ -59,6 +63,18 @@ end
 importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(Σ, StopCondition(f, n); kwargs...)
 
 # MCMC Sampling
+
+import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
+IteratorSize(::Type{MonteCarloProposal}) = IsInfinite()
+IteratorEltype(::Type{MonteCarloProposal}) = HasEltype()
+function eltype(::Type{MonteCarloProposal{
+    Θ, Π, Q, Tuple{LH, Y}
+}}) where {Θ, Π, Q, Y} where LH <: NTuple{N, AbstractLikelihoodFunction} where N
+    return NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :w_components, :L),
+    Tuple{Θ, Θ, Float64, Float64, Float64, NTuple{N, Float64}, NTuple{N, AbstractLikelihoodFunction}}}
+end
+
+
 function Base.iterate(Σ::MonteCarloProposal)
     initial_proposal = rand(Σ.prior)
     θ = initial_proposal[:θ]
@@ -84,10 +100,6 @@ function metropolis_hastings(state, proposal)
     return proposal[:logp] + proposal[:logw] - state[:logp] - state[:logw]
 end
 
-import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
-IteratorSize(::Type{MonteCarloProposal}) = IsInfinite()
-IteratorEltype(::Type{MonteCarloProposal}) = HasEltype()
-eltype(::Type{MonteCarloProposal}) = NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :w_components, :L)}
 
 export mcmc_sample
 function mcmc_sample(
@@ -95,8 +107,8 @@ function mcmc_sample(
     stop::StopCondition = StopCondition(length, 100)
 )   
     σ = Iterators.Stateful(Σ)
+    sample = Array{eltype(typeof(Σ)), 1}()
 
-    sample = [first(σ)]
     while !stop(sample)
         push!(sample, first(σ))
     end
