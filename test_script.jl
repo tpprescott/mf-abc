@@ -22,5 +22,5 @@ L_sl = BayesianSyntheticLikelihood(F, num_simulations = 1000)
 Σ_abc = MonteCarloProposal(prior, q, L_abc, y_obs)
 Σ_sl = MonteCarloProposal(prior, q, L_sl, y_obs)
 
-K = PerturbationKernel{TomM}(MvNormal(zeros(2), diagm([0.1,0.1])))
+K = PerturbationKernel{TomM}(MvNormal([0.5, 0.5], diagm([0.02,0.02])))
 Σ = MonteCarloProposal(prior, K, L_sl, y_obs)

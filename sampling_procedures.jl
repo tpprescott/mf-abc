@@ -19,7 +19,7 @@ end
 function (Σ::MonteCarloProposal)(; loglikelihood::Bool=false, kwargs...)
     proposal::NamedTuple{(:θ, :logq, :logp)} = rand(Σ.q; prior=Σ.prior, kwargs...)
     if isfinite(proposal.logp)
-        weight = likelihood(Σ.lh_set, proposal[:θ]; loglikelihood=loglikelihood, kwargs...)
+        weight = likelihood(Σ.lh_set, proposal.θ; loglikelihood=loglikelihood, kwargs...)
     else
         L = Σ.lh_set[1]
         N = length(L)
@@ -34,7 +34,7 @@ function batch(Σ::MonteCarloProposal, N::Int64; kwargs...)
     I = zip(I_Σ, I_kw)
     
     b = pmap(_batch, Iterators.take(I, N))
-    return table(b)
+    return b
 end
 _batch((Σ, kwargs)) = Σ(; kwargs...)
 
@@ -56,7 +56,7 @@ function importance_sample(
 )
     sample = batch(Σ, batch_size; parallel=parallel, kwargs...)
     while !stop(sample)
-        append!(rows(sample), rows(batch(Σ, batch_size; parallel=parallel, kwargs...)))
+        append!(sample, batch(Σ, batch_size; parallel=parallel, kwargs...))
     end
     return sample
 end
@@ -70,8 +70,8 @@ IteratorEltype(::Type{Σ}) where Σ<:MonteCarloProposal = HasEltype()
 function eltype(::Type{MonteCarloProposal{
     Θ, Π, Q, Tuple{LH, Y}
 }}) where {Θ, Π, Q, Y} where LH <: NTuple{N, AbstractLikelihoodFunction} where N
-    return NamedTuple{(:θ_accept, :θ, :logq, :logp, :logw, :w_components, :L),
-    Tuple{Θ, Θ, Float64, Float64, Float64, NTuple{N, Float64}, NTuple{N, AbstractLikelihoodFunction}}}
+    return NamedTuple{(:θ, :θstar, :logq, :logp, :logw, :w_components),
+    Tuple{Θ, Θ, Float64, Float64, Float64, NTuple{N, Float64}}}
 end
 
 
@@ -83,7 +83,7 @@ function Base.iterate(Σ::MonteCarloProposal)
     isfinite(weight[:logw]) || (return Base.iterate(Σ))
 
     initial_state = merge(initial_proposal, weight)
-    out = merge((θ_accept = θ,), initial_state)
+    out = (θ = θ, θstar = θ, logq = initial_proposal.logq, logp = initial_proposal.logp, logw = weight.logw, w_components = weight.w_components)
     return out, initial_state
 end
 
@@ -92,7 +92,8 @@ function Base.iterate(Σ::MonteCarloProposal, state::NamedTuple)
     proposal = Σ(; loglikelihood=true)
     logα = metropolis_hastings(state, proposal)
     new_state = log(rand())<logα ? proposal : state
-    return merge((θ_accept = new_state[:θ],), proposal), new_state
+    out = (θ = new_state.θ, θstar = proposal.θ, logq = proposal.logq, logp = proposal.logp, logw = proposal.logw, w_components = proposal.w_components)
+    return out, new_state
 end
 
 function metropolis_hastings(state, proposal)
@@ -104,14 +105,14 @@ end
 export mcmc_sample
 function mcmc_sample(
     Σ::MonteCarloProposal,
-    stop::StopCondition = StopCondition(length, 100)
+    stop::StopCondition = StopCondition(length, 100);
+    batch_size = 100,
 )   
     σ = Iterators.Stateful(Σ)
-    sample = Array{eltype(typeof(Σ)), 1}()
-
+    sample = collect(Iterators.take(σ, batch_size))
     while !stop(sample)
-        push!(sample, first(σ))
+        append!(sample, collect(Iterators.take(σ, batch_size)))
     end
-    return table(sample)
+    return sample
 end
 mcmc_sample(Σ::MonteCarloProposal, f, n; kwargs...) = mcmc_sample(Σ, StopCondition(f, n); kwargs...)
