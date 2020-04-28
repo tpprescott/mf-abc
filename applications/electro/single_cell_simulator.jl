@@ -120,6 +120,7 @@ function (F::SingleCellSimulator)(; polarised_speed::Float64, σ::Float64, EB_on
 
     sol = solve(F.prob, saveat=F.saveat, save_idxs=1, save_noise=true)
     summary = Array{Float64,1}()
+    sizehint!(summary, 6)
     F.displacements && append!(summary, get_displacements(sol.u))
     F.angles && append!(summary, get_angles(sol.u))
     isempty(summary) && error("Nothing returned by simulation")

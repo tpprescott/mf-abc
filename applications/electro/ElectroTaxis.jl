@@ -64,3 +64,5 @@ t_obs = collect(0.:5.:180.)
 include("single_cell_simulator.jl")
 
 end
+
+include("ElectroTaxisSingleCellAnalysis.jl")
