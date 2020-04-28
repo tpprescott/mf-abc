@@ -35,13 +35,8 @@ const Σ_EF = MonteCarloProposal(prior_EF, K_EF, L_EF, y_obs_EF)
 
 test_EF = first(Σ_EF)
 
-export F1, F2
-
-function F1()
-    return collect(Iterators.take(Σ_NoEF, 1000))
-end
-function F2()
-    return collect(Iterators.take(Σ_EF, 1000))
-end
+export MCMC_NoEF, MCMC_EF
+MCMC_NoEF = Iterators.take(Σ_NoEF, 1000)
+MCMC_EF = Iterators.take(Σ_EF, 1000)
 
 end
