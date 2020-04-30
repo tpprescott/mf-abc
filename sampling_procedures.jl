@@ -1,33 +1,107 @@
-export importance_sample
+export MCMCProposal, propose, initial
+export mcmc_sample
 
-export MonteCarloProposal
-struct MonteCarloProposal{Θ<:AbstractModel, Π<:AbstractGenerator{Θ}, Q<:AbstractGenerator{Θ}, W<:LikelihoodObservationSet}
+struct MCMCProposal{Θ<:AbstractModel, Π<:AbstractGenerator{Θ}, W<:LikelihoodObservationSet}
     prior::Π
-    q::Q
+    K::PerturbationKernel{Θ}
     lh_set::W
-end
-MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, L_set::NTuple{N, AbstractLikelihoodFunction}, y_obs_set::NTuple{N, X where X}) where N where Θ = MonteCarloProposal(prior, q, (L_set, y_obs_set))
-MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, lh_fun::LikelihoodObservationPair...) where Θ = MonteCarloProposal(prior, q, zip(lh_fun...)...)
-MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, w::AbstractLikelihoodFunction, y_obs) where Θ = MonteCarloProposal(prior, q, (w, y_obs))
-MonteCarloProposal(prior::AbstractGenerator{Θ}, args...) where Θ = MonteCarloProposal(prior, prior, args...)
-function MonteCarloProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, args...) where Θ
-    for x_i in args
-        println(x_i)
+    function MCMCProposal(prior::Π, K::PerturbationKernel, lh_set::W) where Π <: AbstractGenerator{Θ} where Θ where W
+        return new{Θ, Π, W}(prior, K, lh_set)
+    end
+    function MCMCProposal(prior::Π, C0::Matrix{Float64}, lh_set::W) where Π<:AbstractGenerator{Θ} where Θ where W
+        init = rand(prior)
+        K = PerturbationKernel(init.θ, C0)
+        return new{Θ, Π, W}(prior, K, lh_set)
     end
 end
 
-function (Σ::MonteCarloProposal)(; loglikelihood::Bool=false, kwargs...)
-    proposal::NamedTuple{(:θ, :logq, :logp)} = rand(Σ.q; prior=Σ.prior, kwargs...)
+MCMCProposal(
+    prior::AbstractGenerator{Θ},
+    K,
+    L_set::NTuple{N, L where L<:AbstractLikelihoodFunction}, 
+    y_obs_set::NTuple{N, X where X}
+) where N where Θ = MCMCProposal(prior, K, (L_set, y_obs_set))
+
+MCMCProposal(
+    prior::AbstractGenerator{Θ}, 
+    K,
+    lh_fun::LikelihoodObservationPair...
+) where Θ = MCMCProposal(prior, K, zip(lh_fun...)...)
+
+MCMCProposal(
+    prior::AbstractGenerator{Θ}, 
+    K,
+    w::AbstractLikelihoodFunction, 
+    y_obs,
+) where Θ = MCMCProposal(prior, K, ((w,), (y_obs,)))
+
+function MCMCProposal(prior::AbstractGenerator{Θ}, args...) where Θ
+error("$(args...) is not valid for creating an MCMC proposal")
+end
+
+function propose(
+    Σ::MCMCProposal{Θ, Π, LikelihoodObservationSet{N, TLL, TXX}},
+    L_pre...;
+    kwargs...
+) where Θ where Π where TLL<:NTuple{N,AbstractLikelihoodFunction} where TXX<:NTuple{N,Any} where N
+
+    proposal = rand(Σ.K; prior=Σ.prior, kwargs...)
     if isfinite(proposal.logp)
-        weight = likelihood(Σ.lh_set, proposal.θ; loglikelihood=loglikelihood, kwargs...)
+        weight = loglikelihood(Σ.lh_set, proposal.θ, L_pre...; kwargs...)
     else
-        L = Σ.lh_set[1]
-        N = length(L)
-        weight = loglikelihood ? (logw=-Inf, w_components=Tuple(fill(-Inf, N)), L=L) : (w=0.0, w_components=Tuple(fill(0.0, N)), L=L)
+        L::TLL = Σ.lh_set[1]
+        weight::NamedTuple{(:logw, :logww, :L), Tuple{Float64, NTuple{N, Float64}, TLL}} = (logw=-Inf, logww=Tuple(fill(-Inf, N)), L=L)
     end
     return merge(proposal, weight)
 end
 
+function initial(Σ::MCMCProposal; kwargs...)
+    proposal = propose(Σ)
+    return isfinite(proposal.logw) ? proposal : initial(Σ; kwargs...)
+end
+
+# MCMC Sampling
+
+import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
+IteratorSize(::Type{Σ}) where Σ<:MCMCProposal = IsInfinite()
+IteratorEltype(::Type{Σ}) where Σ<:MCMCProposal = HasEltype()
+function eltype(::Type{MCMCProposal{Θ, Π, LikelihoodObservationSet{N, TLL, TXX}}}) where Θ where Π where TXX<:NTuple{N, Any} where TLL<:NTuple{N, AbstractLikelihoodFunction} where N 
+    return NamedTuple{(:θ, :θstar, :logp, :logw, :logww, :L),
+    Tuple{Θ, Θ, Float64, Float64, NTuple{N, Float64}, TLL}}
+end
+
+function Base.iterate(Σ::MCMCProposal)
+    init = initial(Σ)
+    out = (θ = init.θ, θstar = init.θ, logp = init.logp, logw = init.logw, logww = init.logww, L = init.L)
+    recentre!(Σ.K, init.θ)
+    return out, init
+end
+
+function Base.iterate(Σ::MCMCProposal, state::NamedTuple)
+    proposal = propose(Σ, state.L)
+    logα = metropolis_hastings(state, proposal)
+    if log(rand())<logα 
+        state = proposal
+        recentre!(Σ.K, state.θ)
+    end
+    out = (θ = state.θ, θstar = proposal.θ, logp = proposal.logp, logw = proposal.logw, logww = proposal.logww, L = proposal.L)
+    return out, state
+end
+
+function metropolis_hastings(state, proposal)
+    # We are only working with symmetric proposal distributions
+    return proposal[:logp] + proposal[:logw] - state[:logp] - state[:logw]
+end
+
+function mcmc_sample(
+    Σ::MCMCProposal,
+    numChain::Int64,
+)   
+    σ_n = Iterators.take(Σ, numChain)
+    return table(collect(σ_n))
+end
+
+#=
 function batch(Σ::MonteCarloProposal, N::Int64; kwargs...)
     I_Σ = Iterators.repeated(Σ)
     I_kw = Iterators.repeated(kwargs)
@@ -61,58 +135,4 @@ function importance_sample(
     return sample
 end
 importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(Σ, StopCondition(f, n); kwargs...)
-
-# MCMC Sampling
-
-import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
-IteratorSize(::Type{Σ}) where Σ<:MonteCarloProposal = IsInfinite()
-IteratorEltype(::Type{Σ}) where Σ<:MonteCarloProposal = HasEltype()
-function eltype(::Type{MonteCarloProposal{
-    Θ, Π, Q, Tuple{LH, Y}
-}}) where {Θ, Π, Q, Y} where LH <: NTuple{N, AbstractLikelihoodFunction} where N
-    return NamedTuple{(:θ, :θstar, :logq, :logp, :logw, :w_components),
-    Tuple{Θ, Θ, Float64, Float64, Float64, NTuple{N, Float64}}}
-end
-
-
-function Base.iterate(Σ::MonteCarloProposal)
-    initial_proposal = rand(Σ.prior)
-    θ = initial_proposal[:θ]
-
-    weight = likelihood(Σ.lh_set, θ; loglikelihood=true)
-    isfinite(weight[:logw]) || (return Base.iterate(Σ))
-
-    initial_state = merge(initial_proposal, weight)
-    out = (θ = θ, θstar = θ, logq = initial_proposal.logq, logp = initial_proposal.logp, logw = weight.logw, w_components = weight.w_components)
-    return out, initial_state
-end
-
-function Base.iterate(Σ::MonteCarloProposal, state::NamedTuple)
-    recentre!(Σ.q, state[:θ])
-    proposal = Σ(; loglikelihood=true)
-    logα = metropolis_hastings(state, proposal)
-    new_state = log(rand())<logα ? proposal : state
-    out = (θ = new_state.θ, θstar = proposal.θ, logq = proposal.logq, logp = proposal.logp, logw = proposal.logw, w_components = proposal.w_components)
-    return out, new_state
-end
-
-function metropolis_hastings(state, proposal)
-    # Assuming we are only working with symmetric proposal distributions
-    return proposal[:logp] + proposal[:logw] - state[:logp] - state[:logw]
-end
-
-
-export mcmc_sample
-function mcmc_sample(
-    Σ::MonteCarloProposal,
-    stop::StopCondition = StopCondition(length, 100);
-    batch_size = 100,
-)   
-    σ = Iterators.Stateful(Σ)
-    sample = collect(Iterators.take(σ, batch_size))
-    while !stop(sample)
-        append!(sample, collect(Iterators.take(σ, batch_size)))
-    end
-    return sample
-end
-mcmc_sample(Σ::MonteCarloProposal, f, n; kwargs...) = mcmc_sample(Σ, StopCondition(f, n); kwargs...)
+=#

@@ -8,19 +8,19 @@ prior = DistributionGenerator(TomM, product_distribution([Uniform(0,1), Uniform(
 y_obs = [[0.1, 0.12] .+ 0.2*randn(2) for i in 1:10]
 
 struct TomF <: AbstractSimulator end
-function (::TomF)(; x::Float64, σ::Float64, n=randn(2), kwargs...)::NamedTuple 
+function (::TomF)(; x::Float64, σ::Float64, n=randn(2), kwargs...)
     y = x .+ σ*n
     return (y=y, n=n)
 end
 F = TomF()
+Base.eltype(::Type{TomF}) = NamedTuple{(:y, :n), Tuple{Array{Float64,1}, Array{Float64,1}}}
 
 using Distances
 
-L_abc = ABCLikelihood(F, Euclidean(), 0.1, num_simulations = 10*length(y_obs))
-L_sl = BayesianSyntheticLikelihood(F, num_simulations = 1000)
+L_abc = ABCLikelihood(F, Euclidean(), 0.1, numReplicates=100)
+L_bsl = BayesianSyntheticLikelihood(F, numReplicates=500)
+L_csl = BayesianSyntheticLikelihood(F, numReplicates=500, numIndependent=10)
 
-Σ_abc = MonteCarloProposal(prior, q, L_abc, y_obs)
-Σ_sl = MonteCarloProposal(prior, q, L_sl, y_obs)
-
-K = PerturbationKernel{TomM}(MvNormal([0.5, 0.5], diagm([0.02,0.02])))
-Σ = MonteCarloProposal(prior, K, L_sl, y_obs)
+C0 = diagm(0=>[0.02,0.02])
+Σ =  MCMCProposal(prior, C0, L_bsl, y_obs)
+Σc = MCMCProposal(prior, C0, L_csl, y_obs)

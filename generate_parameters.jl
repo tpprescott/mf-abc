@@ -8,7 +8,7 @@ import Distributions.logpdf, Distributions.logpdf!
 export rand, rand!, logpdf, logpdf!
 
 # Basic rand is to produce θ::Θ - need to implement (q::AbstractGenerator::M)(; kwargs...)
-function rand(q::AbstractGenerator{Θ}; prior::AbstractGenerator{Θ}=q, kwargs...)::NamedTuple where Θ<:AbstractModel
+function rand(q::AbstractGenerator{Θ}; prior::AbstractGenerator{Θ}=q, kwargs...)::NamedTuple{(:θ, :logq, :logp), Tuple{Θ, Float64, Float64}} where Θ<:AbstractModel
     return q(; prior=prior, kwargs...)
 end
 function logpdf(q::AbstractGenerator{Θ}, θ::Θ) where Θ
