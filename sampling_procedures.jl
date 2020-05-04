@@ -66,13 +66,13 @@ import Base: IteratorSize, IsInfinite, IteratorEltype, HasEltype, eltype
 IteratorSize(::Type{Σ}) where Σ<:MCMCProposal = IsInfinite()
 IteratorEltype(::Type{Σ}) where Σ<:MCMCProposal = HasEltype()
 function eltype(::Type{MCMCProposal{Θ, Π, LikelihoodObservationSet{N, TLL, TXX}}}) where Θ where Π where TXX<:NTuple{N, Any} where TLL<:NTuple{N, AbstractLikelihoodFunction} where N 
-    return NamedTuple{(:θ, :θstar, :logp, :logw, :logww, :L),
-    Tuple{Θ, Θ, Float64, Float64, NTuple{N, Float64}, TLL}}
+    return NamedTuple{(:θ, :θstar, :logp, :logw, :logww),
+    Tuple{Θ, Θ, Float64, Float64, NTuple{N, Float64}}}
 end
 
 function Base.iterate(Σ::MCMCProposal)
     init = initial(Σ)
-    out = (θ = init.θ, θstar = init.θ, logp = init.logp, logw = init.logw, logww = init.logww, L = init.L)
+    out = (θ = init.θ, θstar = init.θ, logp = init.logp, logw = init.logw, logww = init.logww)
     recentre!(Σ.K, init.θ)
     return out, init
 end
@@ -84,7 +84,7 @@ function Base.iterate(Σ::MCMCProposal, state::NamedTuple)
         state = proposal
         recentre!(Σ.K, state.θ)
     end
-    out = (θ = state.θ, θstar = proposal.θ, logp = proposal.logp, logw = proposal.logw, logww = proposal.logww, L = proposal.L)
+    out = (θ = state.θ, θstar = proposal.θ, logp = proposal.logp, logw = proposal.logw, logww = proposal.logww)
     return out, state
 end
 
