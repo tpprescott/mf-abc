@@ -109,7 +109,7 @@ function (F::SingleCellSimulator)(;
     β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
     p = (v=polarised_speed, σ=σ, β=β, λ=λ, γ=0.5*EF_bias*σ^2)
     
-    couple = isnothing(W) ? nothing : NoiseWrapper(W)
+    couple = W===nothing ? nothing : NoiseWrapper(W)
     prob = SDEProblem(drift(F.emf), noise!, u0, F.tspan, p, noise=couple, noise_rate_prototype=noise_shape)
     sol = solve(prob, SRA(), saveat=F.saveat, save_idxs=1, save_noise=true)
 
