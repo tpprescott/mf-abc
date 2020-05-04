@@ -134,8 +134,8 @@ function simulate(
     I_coupled = Iterators.take(zip(I_F, I_θ, I_kw, y0), numCoupled)
 
     R = Array{eltype(F), 1}(undef, numReplicates)
-    R[1:numIndependent] = @showprogress pmap(_simulate, I_independent)
-    R[numIndependent+1:end] = @showprogress pmap(_simulate, I_coupled)
+    R[1:numIndependent] = @showprogress "$θ \n $numIndependent Independent: " pmap(_simulate, I_independent)
+    R[numIndependent+1:end] = @showprogress "$numCoupled Coupled: " pmap(_simulate, I_coupled)
     
     return R
 end
