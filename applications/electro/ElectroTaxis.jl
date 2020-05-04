@@ -65,4 +65,4 @@ include("single_cell_simulator.jl")
 
 end
 
-include("ElectroTaxisSingleCellAnalysis.jl")
+# include("ElectroTaxisSingleCellAnalysis.jl")

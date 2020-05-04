@@ -35,9 +35,8 @@ end
 export SingleCellSimulator
 # abstract type SingleCellSimulator{M, T, F<:EMField} <: AbstractSimulator{M, T} end
 
-const noise_shape = [complex(0.0), complex(1.0)]
-struct SingleCellSimulator <: AbstractSimulator
-    prob::SDEProblem
+struct SingleCellSimulator{EMF<:AbstractEMField} <: AbstractSimulator
+    emf::EMF
     σ_init::Float64
     tspan::Tuple{Float64, Float64}
     saveat::Array{Float64,1}
@@ -46,24 +45,15 @@ struct SingleCellSimulator <: AbstractSimulator
     angles::Bool
 
     function SingleCellSimulator(;
+        emf::F=NOFIELD,
         displacements::Bool=true,
         angles::Bool=false,
         σ_init::Float64=0.0, 
         tspan::Tuple{Float64,Float64}=(0.0, 180.0), 
         saveat::Array{Float64,1}=collect(0.0:5.0:180.0),
-        emf::F=NOFIELD,
         ) where F<:AbstractEMField
-
-        prob = SDEProblem(
-            drift(emf),
-            noise!, 
-            [complex(0.0), complex(0.0)], 
-            tspan, 
-            Dict(:v=>1.0, :σ=>1.0, :λ=>1.3, :β=>10.0, :γ=>0.0),
-            noise_rate_prototype=noise_shape,
-            )
         
-        return new(prob, σ_init, tspan, saveat, displacements, angles)
+        return new{F}(emf, σ_init, tspan, saveat, displacements, angles)
     end
 end
 
@@ -106,23 +96,29 @@ end
 function get_β(EB_on, σ, λ)
     return -6.0 * (σ^2) * EB_on / (((λ-1)^2)*(λ-4))
 end
-function initial_conditions!(x0::Array{Complex{Float64}, 1}, sigma)
-    x0[2] = sigma*complex(randn(), randn())
-    return nothing
+function initial_conditions(sigma)
+    return [complex(0), sigma*complex(randn(), randn())]
 end
 
-function (F::SingleCellSimulator)(; polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64, EF_bias::Float64=0.0, kwargs...)
-    F.prob.p[:v] = polarised_speed
-    F.prob.p[:σ] = σ
-    F.prob.p[:β], F.prob.p[:λ] = _map_barriers_to_coefficients(EB_on, EB_off, σ)
-    F.prob.p[:γ] = 0.5*EF_bias*σ^2
-    F.prob.u0[2] = F.σ_init*complex(randn(), randn())
+const noise_shape = [complex(0.0), complex(1.0)]
+function (F::SingleCellSimulator)(; 
+    polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64, EF_bias::Float64=0.0,
+    u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
+    kwargs...)
 
-    sol = solve(F.prob, saveat=F.saveat, save_idxs=1, save_noise=true)
+    β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
+    p = (v=polarised_speed, σ=σ, β=β, λ=λ, γ=0.5*EF_bias*σ^2)
+    
+    couple = isnothing(W) ? nothing : NoiseWrapper(W)
+    prob = SDEProblem(drift(F.emf), noise!, u0, F.tspan, p, noise=couple, noise_rate_prototype=noise_shape)
+    sol = solve(prob, SRA(), saveat=F.saveat, save_idxs=1, save_noise=true)
+
     summary = Array{Float64,1}()
     sizehint!(summary, 6)
     F.displacements && append!(summary, get_displacements(sol.u))
     F.angles && append!(summary, get_angles(sol.u))
     isempty(summary) && error("Nothing returned by simulation")
-    return (y=summary, u0=copy(sol.prob.u0), W=NoiseWrapper(sol.W))
+    return (y=summary, u0=copy(sol.prob.u0), W=sol.W)
 end
+import Base.eltype
+eltype(::Type{T}) where T<:SingleCellSimulator = NamedTuple{(:y, :u0, :W), Tuple{Array{Float64,1}, Array{Complex{Float64}, 1}, DiffEqBase.AbstractNoiseProcess}}
