@@ -15,8 +15,8 @@ const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
 )
 const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
-const L_NoEF_BSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=500)
-const L_NoEF_CSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=500, numIndependent=5)
+const L_NoEF_BSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=50)
+const L_NoEF_CSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=50, numIndependent=1)
 
 const Σ_NoEF_BSL = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL, y_obs_NoEF)
 const Σ_NoEF_CSL = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL, y_obs_NoEF)
@@ -32,8 +32,8 @@ const K_EF = PerturbationKernel{SingleCellModel_EF}(
 )
 const y_obs_EF = vcat.(EF_displacements, EF_angles)
 const F_EF = SingleCellSimulator(σ_init=0.1, angles=true, emf = EMF)
-const L_EF_BSL = BayesianSyntheticLikelihood(F_EF, numReplicates=500)
-const L_EF_CSL = BayesianSyntheticLikelihood(F_EF, numReplicates=500, numIndependent=5)
+const L_EF_BSL = BayesianSyntheticLikelihood(F_EF, numReplicates=50)
+const L_EF_CSL = BayesianSyntheticLikelihood(F_EF, numReplicates=50, numIndependent=1)
 
 const Σ_EF_BSL = MCMCProposal(prior_EF, K_EF, L_EF_BSL, y_obs_EF)
 const Σ_EF_CSL = MCMCProposal(prior_EF, K_EF, L_EF_CSL, y_obs_EF)
