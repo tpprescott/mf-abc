@@ -56,6 +56,8 @@ function propose(
 end
 
 function initial(Σ::MCMCProposal; kwargs...)
+    init_θ = rand(Σ.prior; kwargs...).θ
+    recentre!(Σ.K, init_θ)
     proposal = propose(Σ)
     return isfinite(proposal.logw) ? proposal : initial(Σ; kwargs...)
 end
