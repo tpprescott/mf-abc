@@ -11,7 +11,7 @@ const prior_NoEF = DistributionGenerator(SingleCellModel_NoEF, product_distribut
     Uniform(0,2), Uniform(0,5), Uniform(0,5), Uniform(0,2)
 ]))
 const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
-    MvNormal(zeros(4), diagm(0=>fill(0.1, 4)))
+    MvNormal(zeros(4), diagm(0=>fill(0.01, 4)))
 )
 const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
@@ -28,7 +28,7 @@ const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution(
     Uniform(0,2), Uniform(0,5), Uniform(0,5), Uniform(0,2), Uniform(0,2)
 ]))
 const K_EF = PerturbationKernel{SingleCellModel_EF}(
-    MvNormal(zeros(5), diagm(0=>fill(0.1, 5)))
+    MvNormal(zeros(5), diagm(0=>fill(0.01, 5)))
 )
 const y_obs_EF = vcat.(EF_displacements, EF_angles)
 const F_EF = SingleCellSimulator(σ_init=0.1, angles=true, emf = EMF)
