@@ -103,38 +103,49 @@ function mcmc_sample(
     return table(collect(σ_n))
 end
 
-#=
-function batch(Σ::MonteCarloProposal, N::Int64; kwargs...)
+# Importance sampling
+export ISProposal
+
+struct ISProposal{Θ<:AbstractModel, Π<:AbstractGenerator{Θ}, Q<:AbstractGenerator{Θ}, W<:LikelihoodObservationSet}
+    prior::Π
+    q::Q
+    lh_set::W
+    function ISProposal(prior::Π, q::Q, lh_set::W) where Π <: AbstractGenerator{Θ} where Q<:AbstractGenerator{Θ} where Θ where W
+        return new{Θ, Π, Q, W}(prior, q, lh_set)
+    end
+    function ISProposal(prior::Π, lh_set::W) where Π<:AbstractGenerator{Θ} where Θ where W
+        return new{Θ, Π, Π, W}(prior, prior, lh_set)
+    end
+end
+function propose(
+    Σ::ISProposal{Θ, Π, Q, LikelihoodObservationSet{N, TLL, TXX}}, 
+    args...; kwargs...) where Π where Q where TLL where TXX where Θ where N
+
+    proposal = rand(Σ.q; prior=Σ.prior, kwargs...)
+    if isfinite(proposal.logp)
+        weight = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
+    else
+        L::TLL = Σ.lh_set[1]
+        M = length(L)
+        weight = (logw=-Inf, logww=Tuple(fill(-Inf, M)), L=L)
+    end
+    return merge(proposal, weight)
+end
+
+export importance_sample
+function importance_sample(
+    Σ::ISProposal,
+    numSample::Int64;
+    kwargs...
+)
+
     I_Σ = Iterators.repeated(Σ)
     I_kw = Iterators.repeated(kwargs)
     I = zip(I_Σ, I_kw)
     
-    b = pmap(_batch, Iterators.take(I, N))
-    return b
+    b = pmap(_batch, Iterators.take(I, numSample))
+    return table(b)
 end
-_batch((Σ, kwargs)) = Σ(; kwargs...)
-
-export StopCondition
-struct StopCondition{F,N} 
-    f::F
-    n::N
-end
-function (stop::StopCondition)(sample)::Bool
-    stop.f(sample) >= stop.n
-end
-
-function importance_sample(
-    Σ::MonteCarloProposal,
-    stop::StopCondition = StopCondition(length, 100);
-    parallel::Bool = false,
-    batch_size::Int64 = 10,
-    kwargs...
-)
-    sample = batch(Σ, batch_size; parallel=parallel, kwargs...)
-    while !stop(sample)
-        append!(sample, batch(Σ, batch_size; parallel=parallel, kwargs...))
-    end
-    return sample
-end
-importance_sample(Σ::MonteCarloProposal, f, n; kwargs...) = importance_sample(Σ, StopCondition(f, n); kwargs...)
-=#
+function _batch((Σ, kwargs))
+    propose(Σ; kwargs...)
+end 
