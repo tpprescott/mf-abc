@@ -126,7 +126,7 @@ function simulate(
     numCoupled = min(numReplicates-numIndependent, K)
     numIndependent = numReplicates-numCoupled
 
-    iszero(numCoupled) && (return simulate(f, θ, numReplicates))
+    iszero(numCoupled) && (return simulate(f, θ; numReplicates=numReplicates, kwargs...))
     
     I_F = Iterators.repeated(f)
     I_θ = Iterators.repeated(θ)
