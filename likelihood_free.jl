@@ -138,7 +138,7 @@ function simulate(
 
     R = Array{eltype(F), 1}(undef, numReplicates)
     println(θ)
-    R[1:numIndependent] = @showprogress "$$numIndependent independent: " pmap(_simulate, I_independent)
+    R[1:numIndependent] = @showprogress "$numIndependent independent: " pmap(_simulate, I_independent)
     R[numIndependent+1:end] = @showprogress " $numCoupled coupled: " pmap(_simulate, I_coupled)
     
     return R
