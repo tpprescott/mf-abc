@@ -106,6 +106,7 @@ function simulate(f::F, θ::AbstractModel; numReplicates::Int64, kwargs...)::Arr
     I_kw = Iterators.repeated(kwargs)
     I = Iterators.take(zip(I_F, I_θ, I_kw), numReplicates)
 
+    println(θ)
     R = @showprogress pmap(_simulate, I)
     return R
 end
@@ -124,6 +125,8 @@ function simulate(
     numReplicates = max(numReplicates, numIndependent)
     numCoupled = min(numReplicates-numIndependent, K)
     numIndependent = numReplicates-numCoupled
+
+    iszero(numCoupled) && (return simulate(f, θ, numReplicates))
     
     I_F = Iterators.repeated(f)
     I_θ = Iterators.repeated(θ)
@@ -134,7 +137,8 @@ function simulate(
     I_coupled = Iterators.take(zip(I_F, I_θ, I_kw, y0), numCoupled)
 
     R = Array{eltype(F), 1}(undef, numReplicates)
-    R[1:numIndependent] = @showprogress "$θ \n $numIndependent independent: " pmap(_simulate, I_independent)
+    println(θ)
+    R[1:numIndependent] = @showprogress "$$numIndependent independent: " pmap(_simulate, I_independent)
     R[numIndependent+1:end] = @showprogress " $numCoupled coupled: " pmap(_simulate, I_coupled)
     
     return R
