@@ -176,5 +176,6 @@ function importance_sample(
     return table(b)
 end
 function _batch((Σ, kwargs))
-    propose(Σ; kwargs...)
+    out = propose(Σ; kwargs...)
+    return (θ = out.θ, logq = out.logq, logp = out.logp, logw = out.logw, logww = out.logww)
 end 
