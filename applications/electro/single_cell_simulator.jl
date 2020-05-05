@@ -112,7 +112,7 @@ function (F::SingleCellSimulator)(;
     independentFlag = W === nothing
     couple = independentFlag ? nothing : NoiseWrapper(W)
     prob = SDEProblem(drift(F.emf), noise!, u0, F.tspan, p, noise_rate_prototype=noise_shape, noise=couple)
-    sol = solve(prob, SRA(), saveat=F.saveat, save_idxs=1, save_noise = independentFlag)
+    sol = solve(prob, saveat=F.saveat, save_idxs=1, save_noise = independentFlag)
 
     summary = Array{Float64,1}()
     sizehint!(summary, 6)
