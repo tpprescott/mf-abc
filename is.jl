@@ -51,9 +51,9 @@ function propose(
     else
         L::TLL = Σ.lh_set[1]
         M = length(L)
-        weight = (logw=-Inf, logww=Tuple(fill(-Inf, M)), L=L)
+        weight = (logw=-Inf, logww=Tuple(fill(-Inf, M)))
     end
-    return merge(proposal, weight)
+    return merge(proposal, Base.structdiff(weight, NamedTuple{(:L,)}))
 end
 
 export importance_sample
@@ -71,6 +71,5 @@ function importance_sample(
     return table(b)
 end
 function _batch((Σ, kwargs))
-    out = propose(Σ; kwargs...)
-    return (θ = out.θ, logq = out.logq, logp = out.logp, logw = out.logw, logww = out.logww)
+    propose(Σ; kwargs...)
 end 
