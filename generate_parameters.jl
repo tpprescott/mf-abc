@@ -17,4 +17,4 @@ end
 
 include("generate_parameters_distributions.jl")
 include("generate_parameters_perturbations.jl")
-# include("generate_parameters_smc.jl")
+include("generate_parameters_smc.jl")
