@@ -23,11 +23,21 @@ function logpdf(q::DistributionGenerator{Θ, D}, θ::Θ) where Θ<:AbstractModel
     v = make_array(θ)
     return logpdf(q.d, v)
 end
+
 function make_array(θ::Θ) where Θ<:AbstractModel
     dim = length(θ)
     if dim==1
         return θ[1]
     else
         return [values(θ)...]
+    end
+end
+function make_array(θ::AbstractArray{Θ,1}) where Θ<:AbstractModel
+    dim = length(θ[1])
+    N = length(θ)
+    if dim==1
+        return make_array.(θ)   
+    else
+        return hcat(make_array.(θ)...)
     end
 end
