@@ -15,14 +15,23 @@ const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
 )
 const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
-const L_NoEF_BSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=50)
-const L_NoEF_CSL = BayesianSyntheticLikelihood(F_NoEF, numReplicates=50, numIndependent=1)
+L_NoEF_BSL(s, n) = BayesianSyntheticLikelihood(F_NoEF, s, numReplicates=n)
+L_NoEF_CSL(s, n, i) = BayesianSyntheticLikelihood(F_NoEF, s, numReplicates=n, numIndependent=i)
 
-export Σ_NoEF_BSL_MC, Σ_NoEF_BSL_IS, Σ_NoEF_CSL_MC
-const Σ_NoEF_BSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL, y_obs_NoEF)
-const Σ_NoEF_BSL_IS = ISProposal(prior_NoEF, L_NoEF_BSL, y_obs_NoEF)
-const Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL, y_obs_NoEF)
+export Σ_NoEF_BSL_MC, Σ_NoEF_BSL_IS, Σ_NoEF_CSL_MC, Σ_NoEF_BSL_SMC
 
+const Σ_NoEF_BSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL(0, 250), y_obs_NoEF)
+const Σ_NoEF_BSL_IS = ISProposal(prior_NoEF, L_NoEF_BSL(0, 250), y_obs_NoEF)
+const Σ_NoEF_BSL_SMC = SMCWrapper(prior_NoEF, (
+    ((L_NoEF_BSL(4, 50),), (y_obs_NoEF,)),
+    ((L_NoEF_BSL(3, 100),), (y_obs_NoEF,)),
+    ((L_NoEF_BSL(2, 150),), (y_obs_NoEF,)),
+    ((L_NoEF_BSL(1, 200),), (y_obs_NoEF,)),
+    ((L_NoEF_BSL(0, 250),), (y_obs_NoEF,)),
+),
+(500, 500, 500, 500, 500))
+
+Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(0, 250, 1), y_obs_NoEF)
 
 # EF
 const EMF = ConstantEF(1.0)
@@ -44,8 +53,8 @@ const Σ_EF_CSL_MC = MCMCProposal(prior_EF, K_EF, L_EF_CSL, y_obs_EF)
 
 # Joint
 export Σ_Joint_BSL_MC, Σ_Joint_BSL_IS, Σ_Joint_CSL_MC
-const Σ_Joint_BSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_BSL, L_EF_BSL), (y_obs_NoEF, y_obs_EF))
-const Σ_Joint_BSL_IS = ISProposal(prior_EF, (L_NoEF_BSL, L_EF_BSL), (y_obs_NoEF, y_obs_EF))
-const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL, L_EF_CSL), (y_obs_NoEF, y_obs_EF))
+const Σ_Joint_BSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_BSL(0, 50), L_EF_BSL), (y_obs_NoEF, y_obs_EF))
+const Σ_Joint_BSL_IS = ISProposal(prior_EF, (L_NoEF_BSL(0, 50), L_EF_BSL), (y_obs_NoEF, y_obs_EF))
+const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL(0, 50,1), L_EF_CSL), (y_obs_NoEF, y_obs_EF))
 
 end
