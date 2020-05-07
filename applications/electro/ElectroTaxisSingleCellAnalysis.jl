@@ -18,20 +18,19 @@ const F_NoEF = SingleCellSimulator(σ_init=0.1)
 L_NoEF_BSL(s, n) = BayesianSyntheticLikelihood(F_NoEF, s, numReplicates=n)
 L_NoEF_CSL(s, n, i) = BayesianSyntheticLikelihood(F_NoEF, s, numReplicates=n, numIndependent=i)
 
-export Σ_NoEF_BSL_MC, Σ_NoEF_BSL_IS, Σ_NoEF_CSL_MC, Σ_NoEF_BSL_SMC
+export smc_generations
+smc_generations(T::Int64, N::Int64) = smc_generations(T-1:-1:0, fill(N,T))
+smc_generations(s::AbstractArray{Int64,1}, n::AbstractArray{Int64,1}) = smc_generations(zip(s, n)...)
+smc_generations(tup::Tuple) = (((L_NoEF_BSL(tup...), ), (y_obs_NoEF,)),)
+smc_generations(tup::Tuple, tups::Tuple...) = (smc_generations(tup)..., smc_generations(tups...)...)
 
-const Σ_NoEF_BSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL(0, 250), y_obs_NoEF)
-const Σ_NoEF_BSL_IS = ISProposal(prior_NoEF, L_NoEF_BSL(0, 250), y_obs_NoEF)
-const Σ_NoEF_BSL_SMC = SMCWrapper(prior_NoEF, (
-    ((L_NoEF_BSL(4, 50),), (y_obs_NoEF,)),
-    ((L_NoEF_BSL(3, 100),), (y_obs_NoEF,)),
-    ((L_NoEF_BSL(2, 150),), (y_obs_NoEF,)),
-    ((L_NoEF_BSL(1, 200),), (y_obs_NoEF,)),
-    ((L_NoEF_BSL(0, 250),), (y_obs_NoEF,)),
-),
-(500, 500, 500, 500, 500))
 
-Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(0, 250, 1), y_obs_NoEF)
+export Σ_NoEF_BSL_MC, Σ_NoEF_BSL_IS, Σ_NoEF_BSL_SMC, Σ_NoEF_CSL_MC
+
+Σ_NoEF_BSL_MC(s, n) = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL(s, n), y_obs_NoEF)
+Σ_NoEF_BSL_IS(s, n) = ISProposal(prior_NoEF, L_NoEF_BSL(s, n), y_obs_NoEF)
+Σ_NoEF_BSL_SMC(s, n) = SMCWrapper(prior_NoEF, smc_generations(s, n))
+Σ_NoEF_CSL_MC(s,n,i) = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(s, n, i), y_obs_NoEF)
 
 # EF
 const EMF = ConstantEF(1.0)
