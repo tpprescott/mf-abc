@@ -49,10 +49,16 @@ end
 Base.length(::SMCWrapper{N}) where N = N
 Base.eltype(::Type{SMCWrapper}) = IndexedTable
 
+export smc_sample
 function smc_sample(
-    Σ::SMCWrapper,
+    Σ::SMCWrapper{N},
     numSimulations::Int64...
-)
-    Σ.numSimulations = numSimulations
+) where N
+    if N==1
+        Σ.numSimulations = numSimulations
+    else
+        length(numSimulations)==1 && (return smc_sample(Σ, Iterators.repeated(numSimulations..., N)))
+        Σ.numSimulations = numSimulations
+    end
     return collect(Σ)
 end
