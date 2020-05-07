@@ -19,8 +19,8 @@ function BayesianSyntheticLikelihood(f::F, scale=0; numReplicates::Int64, kwargs
     Y = eltype(F)
     return BayesianSyntheticLikelihood(f, Array{Y,1}(), scale; numReplicates=numReplicates, kwargs...)
 end
-function BayesianSyntheticLikelihood(L::BayesianSyntheticLikelihood{F}, y::Array{Y,1}, scale=0; kwargs...) where F where Y
-    return BayesianSyntheticLikelihood(L.f, y, scale; L.kw..., kwargs...)
+function BayesianSyntheticLikelihood(L::BayesianSyntheticLikelihood{F}, y::Array{Y,1}; kwargs...) where F where Y
+    return BayesianSyntheticLikelihood(L.f, y, L.scale; L.kw..., kwargs...)
 end
 
 function (L::BayesianSyntheticLikelihood)(θ::AbstractModel, args...; kwargs...)
