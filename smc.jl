@@ -2,14 +2,30 @@
 
 export SMCWrapper
 
-struct SMCWrapper{N, Θ, Π<:AbstractGenerator{Θ}, W<:NTuple{N, LikelihoodObservationSet}}
+mutable struct SMCWrapper{N, Θ, Π<:AbstractGenerator{Θ}, W<:NTuple{N, LikelihoodObservationSet}}
     prior::Π
     lh_set::W
-    N::NTuple{N, Int64}
+    numSimulations::NTuple{N, Int64}
+    function SMCWrapper(prior::Π, lh_set::W) where W where Π<:AbstractGenerator{Θ} where Θ
+        N = length(lh_set)
+        Σ = new{N, Θ, Π, W}()
+        Σ.prior = prior
+        Σ.lh_set = lh_set
+        return Σ
+    end
 end
 
 export importance_weight
-importance_weight(t) = exp.(select(t, :logw) .+ select(t, :logp) .- select(t, :logq))
+function importance_weight(t) 
+    ww = select(t, :logw) .+ select(t, :logp) .- select(t, :logq)
+    ww .-= maximum(ww)
+    return exp.(ww)
+end
+SequentialImportanceDistribution(
+    tn::IndexedTable,
+    prior::AbstractGenerator,
+    delta::Float64=0.0,
+) = SequentialImportanceDistribution(select(tn, :θ), importance_weight(tn), prior, delta)
 
 function Base.iterate(
     Σ::SMCWrapper{N, Θ},
@@ -23,11 +39,20 @@ function Base.iterate(
         println("Generation $n of $N")
         
         Σn = ISProposal(Σ.prior, qn, Σ.lh_set[n])
-        tn = importance_sample(Σn, Σ.N[n])
-        qn1 = SequentialImportanceDistribution(select(tn, :θ), importance_weight(tn), Σ.prior)
+        tn = importance_sample(Σn, Σ.numSimulations[n])
+
+        qn1 = n==N ? qn : SequentialImportanceDistribution(tn, Σ.prior)
         return tn, (n, qn1)
     end
 end
 
 Base.length(::SMCWrapper{N}) where N = N
 Base.eltype(::Type{SMCWrapper}) = IndexedTable
+
+function smc_sample(
+    Σ::SMCWrapper,
+    numSimulations::Int64...
+)
+    Σ.numSimulations = numSimulations
+    return collect(Σ)
+end
