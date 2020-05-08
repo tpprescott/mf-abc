@@ -57,7 +57,7 @@ function smc_sample(
     if N==1
         Σ.numSimulations = numSimulations
     else
-        length(numSimulations)==1 && (return smc_sample(Σ, Iterators.repeated(numSimulations..., N)))
+        length(numSimulations)==1 && (return smc_sample(Σ, Iterators.repeated(numSimulations..., N)...))
         Σ.numSimulations = numSimulations
     end
     return collect(Σ)
