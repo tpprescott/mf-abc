@@ -1,4 +1,6 @@
 using DifferentialEquations
+using LinearAlgebra
+alignment(z1::Complex, z2::Complex) = (dot(z1,z2)+dot(z2,z1))/2
 
 export AbstractEMField, NoEF
 
@@ -8,7 +10,12 @@ abstract type AbstractEMField end
 function drift(emf::AbstractEMField)
     f = function (du, u, p, t)
         drift_NoEF!(du, u, p, t)
-        du[2] += p[:γ]*emf(t)
+        input = emf(t)
+        if !iszero(input)
+            du[1] += iszero(u[2]) ? 0.0 : p[:γ_alignment]*(alignment(u[2],input)/abs(u[2]))*u[2]
+            du[1] += p[:γ_position] * input
+            du[2] += p[:γ_polarity] * input
+        end
     end
     return f
 end 
@@ -102,12 +109,21 @@ end
 
 const noise_shape = [complex(0.0), complex(1.0)]
 function (F::SingleCellSimulator)(; 
-    polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64, EF_bias::Float64=0.0,
+    polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64,
+    EF_polarity_bias::Float64=0.0, EF_position_bias::Float64=0.0, EF_alignment_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
     kwargs...)
 
     β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
-    p = (v=polarised_speed, σ=σ, β=β, λ=λ, γ=0.5*EF_bias*σ^2)
+    p = (
+        v=polarised_speed, 
+        σ=σ, 
+        β=β, 
+        λ=λ, 
+        γ_polarity = 0.5*EF_polarity_bias*σ^2,
+        γ_position = EF_position_bias*polarised_speed,
+        γ_alignment = EF_alignment_bias*polarised_speed,
+    )
     
     independentFlag = W === nothing
     couple = independentFlag ? nothing : NoiseWrapper(W)

@@ -18,8 +18,10 @@ SingleCellModel_EF = NamedTuple{(
     :EB_on,
     :EB_off,
     :σ,
-    :EF_bias,
-), NTuple{5, Float64}}
+    :EF_polarity_bias,
+    :EF_position_bias,
+    :EF_alignment_bias,
+), NTuple{7, Float64}}
 SingleCellModel = Union{SingleCellModel_EF, SingleCellModel_NoEF}
 
 function get_displacements(y::AbstractArray{Complex{Float64}, 1})
