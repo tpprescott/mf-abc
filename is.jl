@@ -67,7 +67,7 @@ function importance_sample(
     I_kw = Iterators.repeated(kwargs)
     I = zip(I_Σ, I_kw)
     
-    b = map(_batch, Iterators.take(I, numSample))
+    b = pmap(_batch, Iterators.take(I, numSample))
     return table(b)
 end
 function _batch((Σ, kwargs))
