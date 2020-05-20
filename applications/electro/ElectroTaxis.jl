@@ -63,6 +63,35 @@ t_obs = collect(0.:5.:180.)
 
 include("single_cell_simulator.jl")
 
+using StatsPlots
+export visualise
+function visualise(F, θ, N) 
+    fig = plot()
+    for n in 1:N
+        plot!(fig, F(; θ..., output_trajectory=true).u)
+    end
+    plot!(fig;
+    legend=:none, 
+    ratio=:equal,
+    framestyle=:origin,
+    xlabel="x",
+    ylabel="y")
+    return fig
+end
+function visualise(y_obs)
+    fig = plot()
+    for traj in y_obs
+        plot!(fig, traj)
+    end
+    plot!(fig;
+    legend=:none, 
+    ratio=:equal,
+    framestyle=:origin,
+    xlabel="x",
+    ylabel="y")
+    return fig
+end
+
 end
 
 # include("ElectroTaxisSingleCellAnalysis.jl")

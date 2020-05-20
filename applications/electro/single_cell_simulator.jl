@@ -104,7 +104,7 @@ const noise_shape = [complex(0.0), complex(1.0)]
 function (F::SingleCellSimulator)(; 
     polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64, EF_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
-    kwargs...)
+    output_trajectory=false, kwargs...)
 
     β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
     p = (v=polarised_speed, σ=σ, β=β, λ=λ, γ=0.5*EF_bias*σ^2)
@@ -121,7 +121,7 @@ function (F::SingleCellSimulator)(;
     isempty(summary) && error("Nothing returned by simulation")
 
     independentFlag && (W=sol.W)
-    return (y=summary, u0=u0, W=W)
+    return output_trajectory ? sol : (y=summary, u0=u0, W=W)
 end
 import Base.eltype
 eltype(::Type{T}) where T<:SingleCellSimulator = NamedTuple{(:y, :u0, :W), Tuple{Array{Float64,1}, Array{Complex{Float64}, 1}, NoiseProcess}}
