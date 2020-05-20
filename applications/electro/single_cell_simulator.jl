@@ -12,6 +12,7 @@ function drift(emf::AbstractEMField)
         drift_NoEF!(du, u, p, t)
         input = emf(t)
         if !iszero(input)
+            du[1] *= (1.0 + abs(input)*p[:γ_speed])
             du[1] += iszero(u[2]) ? 0.0 : p[:γ_alignment]*(alignment(u[2],input)/abs(u[2]))*u[2]
             du[1] += p[:γ_position] * input
             du[2] += p[:γ_polarity] * input
@@ -110,7 +111,7 @@ end
 const noise_shape = [complex(0.0), complex(1.0)]
 function (F::SingleCellSimulator)(; 
     polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64,
-    EF_polarity_bias::Float64=0.0, EF_position_bias::Float64=0.0, EF_alignment_bias::Float64=0.0,
+    EF_speed_change::Float64=0.0, EF_polarity_bias::Float64=0.0, EF_position_bias::Float64=0.0, EF_alignment_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
     kwargs...)
 
@@ -120,9 +121,10 @@ function (F::SingleCellSimulator)(;
         σ=σ, 
         β=β, 
         λ=λ, 
-        γ_polarity = 0.5*EF_polarity_bias*σ^2,
-        γ_position = EF_position_bias*polarised_speed,
-        γ_alignment = EF_alignment_bias*polarised_speed,
+        γ_polarity = 0.5*EF_polarity_bias*σ^2, # Dimensionalise the parameter
+        γ_speed = EF_speed_change, # Keep parameter nondimensional
+        γ_position = EF_position_bias*polarised_speed, # Dimensionalise the parameter
+        γ_alignment = EF_alignment_bias*polarised_speed, # Dimensionalise the parameter
     )
     
     independentFlag = W === nothing

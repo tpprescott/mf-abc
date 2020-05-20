@@ -13,15 +13,17 @@ SingleCellModel_NoEF = NamedTuple{(
     :σ,
 ), NTuple{4, Float64}}
 
+# All the additional parameters are nondimensional and correspond to presence or absence of EM field of nondimensionalised magnitude 1 only
 SingleCellModel_EF = NamedTuple{(
     :polarised_speed,
     :EB_on,
     :EB_off,
     :σ,
-    :EF_polarity_bias,
-    :EF_position_bias,
-    :EF_alignment_bias,
-), NTuple{7, Float64}}
+    :EF_speed_change,   # Nondimensional
+    :EF_polarity_bias,  # Nondimensional
+    :EF_position_bias,  # Nondimensional
+    :EF_alignment_bias, # Nondimensional
+), NTuple{8, Float64}}
 SingleCellModel = Union{SingleCellModel_EF, SingleCellModel_NoEF}
 
 function get_displacements(y::AbstractArray{Complex{Float64}, 1})
