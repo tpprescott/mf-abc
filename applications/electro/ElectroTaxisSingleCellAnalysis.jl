@@ -8,7 +8,7 @@ const EMF = ConstantEF(1.0)
 
 # NoEF
 const prior_NoEF = DistributionGenerator(SingleCellModel_NoEF, product_distribution([
-    Uniform(0,3), Uniform(0,5), Uniform(0,5), Uniform(0,2),
+    Uniform(0.001,3), Uniform(0,5), Uniform(0,5), Uniform(0.001,2),
 ]))
 const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
     MvNormal(zeros(4), diagm(0=>fill(0.01, 4)))
