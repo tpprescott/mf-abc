@@ -113,7 +113,7 @@ function (F::SingleCellSimulator)(;
     polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64,
     EF_speed_change::Float64=0.0, EF_polarity_bias::Float64=0.0, EF_position_bias::Float64=0.0, EF_alignment_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
-    kwargs...)
+    output_trajectory=false, kwargs...)
 
     β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
     p = (
@@ -139,7 +139,7 @@ function (F::SingleCellSimulator)(;
     isempty(summary) && error("Nothing returned by simulation")
 
     independentFlag && (W=sol.W)
-    return (y=summary, u0=u0, W=W)
+    return output_trajectory ? sol : (y=summary, u0=u0, W=W)
 end
 import Base.eltype
 eltype(::Type{T}) where T<:SingleCellSimulator = NamedTuple{(:y, :u0, :W), Tuple{Array{Float64,1}, Array{Complex{Float64}, 1}, NoiseProcess}}
