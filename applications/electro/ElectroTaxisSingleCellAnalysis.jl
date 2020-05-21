@@ -49,8 +49,8 @@ const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution(
 const K_EF = PerturbationKernel{SingleCellModel_EF}(
     MvNormal(zeros(8), diagm(0=>fill(0.01, 8)))
 )
-const y_obs_EF = vcat.(EF_displacements, EF_angles)
-const F_EF = SingleCellSimulator(σ_init=0.1, angles=true, emf = EMF)
+const y_obs_EF = EF_displacements
+const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
 L_EF_BSL(s,n) = BayesianSyntheticLikelihood(F_EF, s, numReplicates=n)
 L_EF_CSL(s,n,i) = BayesianSyntheticLikelihood(F_EF, s, numReplicates=n, numIndependent=i)
 

@@ -48,20 +48,15 @@ struct SingleCellSimulator{EMF<:AbstractEMField} <: AbstractSimulator
     σ_init::Float64
     tspan::Tuple{Float64, Float64}
     saveat::Array{Float64,1}
-    # Summary functions
-    displacements::Bool
-    angles::Bool
 
     function SingleCellSimulator(;
         emf::F=NOFIELD,
-        displacements::Bool=true,
-        angles::Bool=false,
         σ_init::Float64=0.0, 
         tspan::Tuple{Float64,Float64}=(0.0, 180.0), 
         saveat::Array{Float64,1}=collect(0.0:5.0:180.0),
         ) where F<:AbstractEMField
         
-        return new{F}(emf, σ_init, tspan, saveat, displacements, angles)
+        return new{F}(emf, σ_init, tspan, saveat)
     end
 end
 
@@ -132,12 +127,7 @@ function (F::SingleCellSimulator)(;
     prob = SDEProblem(drift(F.emf), noise!, u0, F.tspan, p, noise_rate_prototype=noise_shape, noise=couple)
     sol = solve(prob, saveat=F.saveat, save_idxs=1, save_noise = independentFlag)
 
-    summary = Array{Float64,1}()
-    sizehint!(summary, 6)
-    F.displacements && append!(summary, get_displacements(sol.u))
-    F.angles && append!(summary, get_angles(sol.u))
-    isempty(summary) && error("Nothing returned by simulation")
-
+    summary = get_displacements(sol.u)
     independentFlag && (W=sol.W)
     return output_trajectory ? sol : (y=summary, u0=u0, W=W)
 end
