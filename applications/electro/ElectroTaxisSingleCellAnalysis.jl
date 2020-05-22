@@ -43,7 +43,7 @@ const Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(0, 500, 5), y
 # EF
 const EMF = ConstantEF(1.0)
 const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution([
-    Uniform(0,3), Uniform(0,5), Uniform(0,5), Uniform(0,2), 
+    Uniform(0.001,3), Uniform(0,5), Uniform(0,5), Uniform(0.001,2), 
     Uniform(0,2), Uniform(0,2), Uniform(0,2), Uniform(0,2),
 ]))
 const K_EF = PerturbationKernel{SingleCellModel_EF}(
