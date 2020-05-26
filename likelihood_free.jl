@@ -36,7 +36,7 @@ function likelihood(
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
     w = _likelihood(L_θ, y_obs; kwargs...)
-    return (w = w, L = L_θ)
+    return (w = w, ww = (w,), L = L_θ)
 end
 
 function loglikelihood(
@@ -47,8 +47,8 @@ function loglikelihood(
 )::NamedTuple{(:logw, :L), Tuple{Float64, TL}} where TL<:AbstractLikelihoodFunction where TX
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
-    w = _loglikelihood(L_θ, y_obs; kwargs...)
-    return (logw = w, L = L_θ)
+    logw = _loglikelihood(L_θ, y_obs; kwargs...)
+    return (logw = logw, logww = (logw,), L = L_θ)
 end
 
 function likelihood(
@@ -74,7 +74,6 @@ function loglikelihood(
     logww = _loglikelihood.(L_θ_set, y_obs; kwargs...)
     return (logw = sum(logww), logww = logww, L = L_θ_set)
 end
-
 
 include("generate_parameters.jl")
 include("sampling_procedures.jl")

@@ -50,7 +50,7 @@ end
             subplot := indices[i,i]
             weights := w
             grid := false
-            xformatter --> ((i == n) ? :auto : (x -> ""))
+            #xformatter --> ((i == n) ? :auto : (x -> ""))
             yformatter := (y -> "")
             update_axes_guides(plotattributes, labs, lims, i, i, n)
             view(mat,:,i)
@@ -71,9 +71,9 @@ end
                     markerstrokewidth --> 0
                     marker_z --> (i>j ? w : logww)
                     seriescolor --> (i>j ? cgrad(:lajolla) : cgrad(:blues, scale=:log))
-                    xformatter --> ((i == n) ? :auto : (x -> ""))
-                    yformatter --> ((j == 1) ? :auto : (y -> ""))
-                    colorbar := :right
+                    #xformatter --> ((i == n) ? :auto : (x -> ""))
+                    #yformatter --> ((j == 1) ? :auto : (y -> ""))
+                    colorbar --> :right
                     vj, vi
                 end
         end

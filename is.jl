@@ -39,27 +39,27 @@ function ISProposal(prior::AbstractGenerator{Θ}, q::AbstractGenerator{Θ}, args
     error("$(args...) is not valid for creating an IS proposal")
 end
 
-
-
 function propose(
     Σ::ISProposal{Θ, Π, Q, LikelihoodObservationSet{N, TLL, TXX}}, 
     args...; kwargs...) where Π where Q where TLL where TXX where Θ where N
 
     proposal = rand(Σ.q; prior=Σ.prior, kwargs...)
     if isfinite(proposal.logp)
-        weight = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
+        logL = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
     else
         L::TLL = Σ.lh_set[1]
         M = length(L)
-        weight = (logw=-Inf, logww=Tuple(fill(-Inf, M)))
+        logL = (logw=-Inf, logww=Tuple(fill(-Inf, M)))
     end
-    return merge(proposal, Base.structdiff(weight, NamedTuple{(:L,)}))
+    return merge(proposal, (logw = logL.logw, logww = logL.logww))
 end
 
 export importance_sample
 function importance_sample(
     Σ::ISProposal,
     numSample::Int64;
+    logw_cap::Union{Nothing, Float64} = nothing,
+    scale::Float64 = 1.0,
     kwargs...
 )
 
@@ -68,7 +68,22 @@ function importance_sample(
     I = zip(I_Σ, I_kw)
     
     b = pmap(_batch, Iterators.take(I, numSample))
-    return table(b)
+    t = table(b)
+    
+    # Importance weighting
+    logw = select(t, :logw)
+    logw .-= (logw_cap === nothing) ? maximum(logw) : logw_cap
+    logw .*= scale
+    logu = log.(rand(numSample))
+    acceptance = logu .< logw
+
+    importance_weight = zeros(numSample)
+    for (i, particle_i) in enumerate(b)
+        if acceptance[i]
+            importance_weight[i] = exp(max(0.0, logw[i]) + particle_i.logp - particle_i.logq)
+        end
+    end
+    return transform(t, :weight => importance_weight)
 end
 function _batch((Σ, kwargs))
     propose(Σ; kwargs...)
