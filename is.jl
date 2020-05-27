@@ -72,7 +72,7 @@ function importance_sample(
     
     # Importance weighting
     logw = select(t, :logw)
-    logw .-= percentile(logw, 1.0-autoaccept_pc, sorted=false)
+    logw .-= quantile(logw, 1.0-autoaccept_pc, sorted=false)
     logw .*= scale
     logu = log.(rand(numSample))
     acceptance = logu .< logw
