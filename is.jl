@@ -58,7 +58,7 @@ export importance_sample
 function importance_sample(
     Σ::ISProposal,
     numSample::Int64;
-    logw_cap::Union{Nothing, Float64} = nothing,
+    autoaccept_pc::Float64 = 0.05,
     scale::Float64 = 1.0,
     kwargs...
 )
@@ -72,7 +72,7 @@ function importance_sample(
     
     # Importance weighting
     logw = select(t, :logw)
-    logw .-= (logw_cap === nothing) ? maximum(logw) : logw_cap
+    logw .-= percentile(logw, 1.0-autoaccept_pc, sorted=false)
     logw .*= scale
     logu = log.(rand(numSample))
     acceptance = logu .< logw
