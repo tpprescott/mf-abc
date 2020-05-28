@@ -36,7 +36,7 @@ end
     markeralpha := 0.4
     #grad = cgrad(:lajolla)
     indices = reshape(1:n^2, n, n)'
-    title = get(plotattributes,:title,"")
+    title = get(plotattributes, :title, "")
     title_location = get(plotattributes, :title_location, :center)
     title := ""
 
@@ -80,6 +80,6 @@ end
     end
 end
 
-function parameterscatter(t::IndexedTable; kwargs...)
-    @df select(t, :θ) parameterscatter(cols(), importance_weight(t), select(t, :logww); kwargs...)
+function parameterscatter(t::IndexedTable; columns, kwargs...)
+    @df select(t, :θ) parameterscatter(cols(columns), select(t, :weight), sum.(select(t, :logww)); kwargs...)
 end
