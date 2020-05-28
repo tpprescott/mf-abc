@@ -2,14 +2,16 @@ module ElectroTaxisSingleCellAnalysis
 
 using ..ElectroTaxis
 using ..LikelihoodFree
-using Distributions, LinearAlgebra
+using Distributions, LinearAlgebra, JLD, IndexedTables
 
 const EMF = ConstantEF(1.0)
 
+const prior_support = [(0.001, 3) (0,5) (0,5) (0.001, 2) (0,2) (0,2) (0,2) (0,2)]
+
 # NoEF
-const prior_NoEF = DistributionGenerator(SingleCellModel_NoEF, product_distribution([
-    Uniform(0.001,3), Uniform(0,5), Uniform(0,5), Uniform(0.001,2),
-]))
+const prior_NoEF = DistributionGenerator(SingleCellModel_NoEF, product_distribution(vec([
+    Uniform(int...) for int in prior_support[1:4]
+])))
 const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
     MvNormal(zeros(4), diagm(0=>fill(0.01, 4)))
 )
@@ -42,10 +44,9 @@ const Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(500, 5), y_ob
 
 # EF
 const EMF = ConstantEF(1.0)
-const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution([
-    Uniform(0.001,3), Uniform(0,5), Uniform(0,5), Uniform(0.001,2), 
-    Uniform(0,2), Uniform(0,2), Uniform(0,2), Uniform(0,2),
-]))
+const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution(vec([
+    Uniform(int...) for int in prior_support
+])))
 const K_EF = PerturbationKernel{SingleCellModel_EF}(
     MvNormal(zeros(8), diagm(0=>fill(0.01, 8)))
 )
@@ -94,5 +95,53 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
     )
 )
 const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL(500 , 5), L_EF_CSL(500, 5)), (y_obs_NoEF, y_obs_EF))
+
+export save_sample, load_sample
+function save_sample(fn::String, t::Array{IndexedTable,1})
+    θ = LikelihoodFree.make_array.(select(t, :θ))
+    w = select.(t, :weight)
+    logww = select.(t, :logww)
+    logp = select.(t, :logp)
+    logq = select.(t, :logq)
+    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq)
+    println("Success! Saved to $(fn)")
+    return nothing
+end
+function load_sample(fn::String, ::Type{Θ}) where Θ<:AbstractModel
+    data = load(fn)
+    N = length(data["θ"])
+    t = map(
+        i-> table((
+                θ = Θ.([data["θ"][i][:,n] for n in 1:size(data["θ"][i], 2)]),
+                logp = data["logp"][i],
+                logq = data["logq"][i],
+                logww = data["logww"][i],
+                weight = data["w"][i],
+        )), 
+        1:N)
+    println("Success! Loaded $(fn)")
+    return t
+end
+
+export ESS
+ESS(w) = sum(w)^2/sum(w.^2)
+ESS(t::IndexedTable) = ESS(select(t, :weight))
+
+export see_parameters_NoEF, see_parameters_Joint
+function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
+    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel_NoEF)
+    T = t[generation]
+    C = (cols===nothing) ? (1:4) : cols
+    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+end
+
+function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
+    t = load_sample("./applications/electro/Joint_BSL_SMC.jld", SingleCellModel_EF)
+    T = t[generation]
+    C = cols===nothing ? (1:8) : cols
+    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+end
+
+
 
 end
