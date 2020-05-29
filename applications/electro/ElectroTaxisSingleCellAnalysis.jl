@@ -2,7 +2,7 @@ module ElectroTaxisSingleCellAnalysis
 
 using ..ElectroTaxis
 using ..LikelihoodFree
-using Distributions, LinearAlgebra, JLD, IndexedTables
+using Distributions, LinearAlgebra, IndexedTables
 
 const EMF = ConstantEF(1.0)
 
@@ -95,37 +95,6 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
     )
 )
 const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL(500 , 5), L_EF_CSL(500, 5)), (y_obs_NoEF, y_obs_EF))
-
-export save_sample, load_sample
-function save_sample(fn::String, t::Array{IndexedTable,1})
-    θ = LikelihoodFree.make_array.(select.(t, :θ))
-    w = select.(t, :weight)
-    logww = select.(t, :logww)
-    logp = select.(t, :logp)
-    logq = select.(t, :logq)
-    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq)
-    println("Success! Saved to $(fn)")
-    return nothing
-end
-function load_sample(fn::String, ::Type{Θ}) where Θ<:AbstractModel
-    data = load(fn)
-    N = length(data["θ"])
-    t = map(
-        i-> table((
-                θ = Θ.([data["θ"][i][:,n] for n in 1:size(data["θ"][i], 2)]),
-                logp = data["logp"][i],
-                logq = data["logq"][i],
-                logww = data["logww"][i],
-                weight = data["w"][i],
-        )), 
-        1:N)
-    println("Success! Loaded $(fn)")
-    return t
-end
-
-export ESS
-ESS(w) = sum(w)^2/sum(w.^2)
-ESS(t::IndexedTable) = ESS(select(t, :weight))
 
 export see_parameters_NoEF, see_parameters_Joint
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
