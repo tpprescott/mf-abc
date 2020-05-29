@@ -1,6 +1,6 @@
 module LikelihoodFree
 
-using IndexedTables, Distributed, ProgressMeter
+using IndexedTables, Distributed, ProgressMeter, JLD
 export select
 
 export AbstractModel, AbstractGenerator, AbstractLikelihoodFunction
@@ -153,5 +153,38 @@ end
 
 include("abc.jl")
 include("synthetic_bayes.jl")
+
+
+export save_sample, load_sample
+function save_sample(fn::String, t::Array{IndexedTable,1})
+    θ = LikelihoodFree.make_array.(select.(t, :θ))
+    w = select.(t, :weight)
+    logww = select.(t, :logww)
+    logp = select.(t, :logp)
+    logq = select.(t, :logq)
+    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq)
+    println("Success! Saved to $(fn)")
+    return nothing
+end
+function load_sample(fn::String, ::Type{Θ}) where Θ<:AbstractModel
+    data = load(fn)
+    N = length(data["θ"])
+    t = map(
+        i-> table((
+                θ = Θ.([data["θ"][i][:,n] for n in 1:size(data["θ"][i], 2)]),
+                logp = data["logp"][i],
+                logq = data["logq"][i],
+                logww = data["logww"][i],
+                weight = data["w"][i],
+        )), 
+        1:N)
+    println("Success! Loaded $(fn)")
+    return t
+end
+
+export ESS
+ESS(w) = sum(w)^2/sum(w.^2)
+ESS(t::IndexedTable) = ESS(select(t, :weight))
+
 
 end
