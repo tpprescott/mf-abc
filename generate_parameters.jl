@@ -14,7 +14,9 @@ end
 function logpdf(q::AbstractGenerator{Θ}, θ::Θ) where Θ
     error("Implement logpdf for $(typeof(q)), returning a named tuple")
 end
+logpdf(q::AbstractGenerator{Θ}, θ) where Θ = logpdf(q, marginalise(θ, Θ))
 
+include("generate_parameters_product.jl")
 include("generate_parameters_distributions.jl")
 include("generate_parameters_perturbations.jl")
 include("generate_parameters_smc.jl")
