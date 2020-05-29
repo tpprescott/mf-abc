@@ -98,7 +98,7 @@ const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL(500 , 5), L_EF_
 
 export save_sample, load_sample
 function save_sample(fn::String, t::Array{IndexedTable,1})
-    θ = LikelihoodFree.make_array.(select(t, :θ))
+    θ = LikelihoodFree.make_array.(select.(t, :θ))
     w = select.(t, :weight)
     logww = select.(t, :logww)
     logp = select.(t, :logp)
