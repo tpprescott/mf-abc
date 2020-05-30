@@ -1,12 +1,3 @@
-function weighted_sum(F, ww::AbstractArray{Float64,1}, xx; normalise=false)
-    G(w,x) = w*F(x)
-    out = mapreduce(G, +, ww, xx)
-    if normalise
-        out ./= sum(ww)
-    end
-    return out
-end
-
 ispos(x)=x>zero(x)
 isneg(x)=ispos(-x)
 isnz(x)=!iszero(x)
@@ -20,13 +11,13 @@ struct SequentialImportanceDistribution{Θ, W<:Weights, Π<:AbstractGenerator{Θ
     w_A::W
     w_R::W
     K_θ::Array{PerturbationKernel{Θ}, 1}
-    prior::Π
+    defence::Π
     δ::Float64
     
     function SequentialImportanceDistribution(
         θ::AbstractArray{Θ, 1}, 
         importance_weights::AbstractArray{Float64,1}, 
-        prior::Π,
+        defence::Π,
         δ=0.0,
     ) where Π <: AbstractGenerator{Θ} where Θ <: AbstractModel
     
@@ -41,46 +32,47 @@ struct SequentialImportanceDistribution{Θ, W<:Weights, Π<:AbstractGenerator{Θ
         covariance_matrix = dim==1 ? cov(make_array(θ[AR]), w_A, corrected=false) : cov(make_array(θ[AR]), w_A, 2, corrected=false)
         K_θ = broadcast(PerturbationKernel, θ[AR], Ref(covariance_matrix))
 
-        return new{Θ, typeof(w_A), Π}(w_A, w_R, K_θ, prior, δ)     
+        return new{Θ, typeof(w_A), Π}(w_A, w_R, K_θ, defence, δ)     
     end
+end
+
+δ_effective(q::SequentialImportanceDistribution) = ispos(q.w_R.sum) ? q.δ : zero(q.δ)
+choose_defence(q::SequentialImportanceDistribution) = ispos(q.w_R.sum) ? q.δ/(q.δ + (1-q.δ)*q.w_A.sum) : 0.0
+function FG(θ, q::SequentialImportanceDistribution)
+    p = exp(logpdf(q.defence, θ))
+    q_i = broadcast(exp ∘ logpdf, q.K_θ, Ref(θ))
+    δ = δ_effective(q)
+
+    F = δ*p + (1-δ)*mean(q_i, q.w_A)*(q.w_A.sum)
+    G = iszero(q.w_R.sum) ? 0.0 : (1-δ)*mean(q_i, q.w_R)*(q.w_R.sum)
+    return F, G, p, δ
 end
 
 function (q::SequentialImportanceDistribution{Θ, W, Π})(; kwargs...) where Θ where W where Π
     # Complicated case only if some weights are negative
-    if ispos(q.w_R.sum)
-        # Select from prior or...
-        if rand() < q.δ/(q.δ + (1-q.δ)*q.w_A.sum)
-            proposal = rand(q.prior)
-        # ...from positive mixture
-        else
-            proposal = rand(sample(q.K_θ, q.w_A), prior=q.prior)
-            isfinite(proposal.logp) || (return rand(q))
-        end
-        p = exp(proposal.logp)
+    u = choose_defence(q)
+    # Select from defence component...
+    if rand() < u
+        θ, = q.defence(; kwargs...)
+    # ...or from positive mixture
+    else
+        θ, = sample(q.K_θ, q.w_A)(; kwargs...)
+#       isfinite(logpdf(q.defence, θ) || (return q(; kwargs...))
+    end
 
-        # Rejection step to ensure selection from max(0, F-G) 
-        q_i = broadcast(exp ∘ logpdf, q.K_θ, Ref(proposal.θ))
-        F = q.δ*p + (1-q.δ)*mean(q_i, q.w_A)*(q.w_A.sum)
-        G = (1-q.δ)*mean(q_i, q.w_R)*(q.w_R.sum)
-        β = G/F
-        γ = q.δ*p/F
-        if rand() < max(γ, 1-β)
-            return merge(proposal, (logq = log(q.δ*p + (1-q.δ)*max(0, F-G)),) )
-        else
-            return rand(q)
-        end
-    else    
-        # Select a particle and perturb it
-        proposal  = rand(sample(q.K_θ, q.w_A), prior=q.prior)
+    # Rejection step to ensure selection from max(0, F-G) 
+    F, G, p, δ = FG(θ, q)
+    β = G/F
+    γ = δ*p/F
 
-        # Check prior likelihood is positive
-        isfinite(proposal.logp) || (return rand(q))
-
-        # Weighted sum of perturbation kernel likelihoods gives the (unnormalised) likelihood under the importance distribution
-        q_i = broadcast(exp ∘ logpdf, q.K_θ, Ref(proposal.θ))
-        lh = mean(q_i, q.w_A)*q.w_A.sum
-        return merge(proposal, (logq = log(lh),))
+    if rand() < max(γ, 1-β)
+        return (θ, log(δ*p + (1-δ)*max(0, F-G)))
+    else
+        return q(; kwargs...)
     end
 end
 
-# TODO - should really implement logpdf for this distribution too
+function logpdf(q::SequentialImportanceDistribution{Θ}, θ::Θ) where Θ
+    F, G, p, δ = FG(θ, q)
+    return log(δ*p + (1-δ)*max(0, F-G))
+end
