@@ -11,15 +11,13 @@ struct DistributionGenerator{Θ, D<:Distribution} <: AbstractGenerator{Θ}
     end
 end
 
-function (q::DistributionGenerator{Θ, D})(; prior::AbstractGenerator{Θ}, kwargs...) where Θ<:AbstractModel where D
+function (q::DistributionGenerator{Θ, D})(; kwargs...) where Θ<:AbstractModel where D
     v = rand(q.d)
     θ = Θ(v)
     logq = logpdf(q.d, v)
-    logp = prior==q ? logq : logpdf(prior, θ)
-#    isfinite(logp) || (return q(; prior=prior, kwargs...))
-    return (θ=θ, logq=logq, logp=logp)
+    return θ, logq
 end
-function logpdf(q::DistributionGenerator{Θ, D}, θ::Θ) where Θ<:AbstractModel where D
+function logpdf(q::DistributionGenerator{Θ}, θ::Θ) where Θ<:AbstractModel
     v = make_array(θ)
     return logpdf(q.d, v)
 end
@@ -39,5 +37,19 @@ function make_array(θ::AbstractArray{Θ,1}) where Θ<:AbstractModel
         return make_array.(θ)   
     else
         return hcat(make_array.(θ)...)
+    end
+end
+
+# Special case - perturbation kernel is multivariate normal. Allow translation.
+export PerturbationKernel, recentre!
+PerturbationKernel{Θ} = DistributionGenerator{Θ, <:MvNormal}
+
+function PerturbationKernel(θ::Θ, covMat) where Θ<:AbstractModel
+    d = MvNormal([values(θ)...], covMat)
+    return DistributionGenerator(Θ, d)
+end
+function recentre!(K::PerturbationKernel{Θ}, θ::Θ) where Θ<:AbstractModel
+    for (i,v) in enumerate(values(θ))
+        K.d.μ[i] = v
     end
 end

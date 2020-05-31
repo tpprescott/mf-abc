@@ -44,13 +44,8 @@ function propose(
     args...; kwargs...) where Π where Q where TLL where TXX where Θ where N
 
     proposal = rand(Σ.q; prior=Σ.prior, kwargs...)
-    if isfinite(proposal.logp)
-        logL = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
-    else
-        L::TLL = Σ.lh_set[1]
-        M = length(L)
-        logL = (logw=-Inf, logww=Tuple(fill(-Inf, M)))
-    end
+    isfinite(proposal.logp) || (return propose(Σ, args...; kwargs...))
+    logL = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
     return merge(proposal, (logw = logL.logw, logww = logL.logww))
 end
 
