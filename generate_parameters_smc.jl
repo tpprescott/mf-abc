@@ -66,5 +66,5 @@ end
 
 function logpdf(q::SequentialImportanceDistribution{Θ}, θ::Θ) where Θ
     F, G, p, δ = FG(θ, q)
-    return log(δ*p + (1-δ)*max(0, F-G))
+    return iszero(p) ? -Inf : log(δ*p + (1-δ)*max(0, F-G))
 end
