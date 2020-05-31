@@ -5,8 +5,9 @@ using Statistics
 using CSV
 
 # Parameter values
-export SingleCellModel_NoEF, SingleCellModel_EF, SingleCellModel
-SingleCellModel_NoEF = NamedTuple{(
+export SingleCellModel, SingleCellBiases
+
+SingleCellModel = NamedTuple{(
     :polarised_speed,
     :EB_on,
     :EB_off,
@@ -14,17 +15,12 @@ SingleCellModel_NoEF = NamedTuple{(
 ), NTuple{4, Float64}}
 
 # All the additional parameters are nondimensional and correspond to presence or absence of EM field of nondimensionalised magnitude 1 only
-SingleCellModel_EF = NamedTuple{(
-    :polarised_speed,
-    :EB_on,
-    :EB_off,
-    :σ,
+SingleCellBiases = NamedTuple{(
     :EF_speed_change,   # Nondimensional
     :EF_polarity_bias,  # Nondimensional
     :EF_position_bias,  # Nondimensional
     :EF_alignment_bias, # Nondimensional
-), NTuple{8, Float64}}
-SingleCellModel = Union{SingleCellModel_EF, SingleCellModel_NoEF}
+), NTuple{4, Float64}}
 
 function get_displacements(y::AbstractArray{Complex{Float64}, 1})
     summary = Array{Float64,1}(undef, 4)

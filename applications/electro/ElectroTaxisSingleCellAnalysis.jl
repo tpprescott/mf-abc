@@ -4,113 +4,92 @@ using ..ElectroTaxis
 using ..LikelihoodFree
 using Distributions, LinearAlgebra, IndexedTables
 
-const EMF = ConstantEF(1.0)
-
 const prior_support = [(0.001, 3) (0,5) (0,5) (0.001, 2) (0,2) (0,2) (0,2) (0,2)]
 
-# NoEF
-const prior_NoEF = DistributionGenerator(SingleCellModel_NoEF, product_distribution(vec([
-    Uniform(int...) for int in prior_support[1:4]
+export prior_NoEF, prior_Bias, prior_FullModel
+
+const prior_NoEF = DistributionGenerator(SingleCellModel, product_distribution(vec([
+    Uniform(interval...) for interval in prior_support[1:4]
 ])))
-const K_NoEF = PerturbationKernel{SingleCellModel_NoEF}(
-    MvNormal(zeros(4), diagm(0=>fill(0.01, 4)))
-)
+const prior_Bias = DistributionGenerator(SingleCellBiases, product_distribution(vec([
+    Uniform(interval...) for interval in prior_support[5:8]
+])))
+const prior_FullModel = ProductGenerator(prior_NoEF, prior_Bias)
+
 const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
+
+const y_obs_EF = EF_displacements
+const EMF = ConstantEF(1.0)
+const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
+
+######### NoEF
+
+export Σ_NoEF_BSL_IS, Σ_NoEF_BSL_SMC
+
 L_NoEF_BSL(n) = BayesianSyntheticLikelihood(F_NoEF, numReplicates=n)
-L_NoEF_CSL(n, i) = BayesianSyntheticLikelihood(F_NoEF, numReplicates=n, numIndependent=i)
-
-
-export Σ_NoEF_BSL_MC, Σ_NoEF_BSL_IS, Σ_NoEF_BSL_SMC, Σ_NoEF_CSL_MC
-const Σ_NoEF_BSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_BSL(500), y_obs_NoEF)
 const Σ_NoEF_BSL_IS = ISProposal(prior_NoEF, L_NoEF_BSL(500), y_obs_NoEF)
 const Σ_NoEF_BSL_SMC = SMCWrapper(
     prior_NoEF,
-    (
-        ((L_NoEF_BSL( 50),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(100),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(150),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(200),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(250),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(300),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(350),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(400),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(450),), (y_obs_NoEF,)),
-        ((L_NoEF_BSL(500),), (y_obs_NoEF,)),
-    )
-)
-const Σ_NoEF_CSL_MC = MCMCProposal(prior_NoEF, K_NoEF, L_NoEF_CSL(500, 5), y_obs_NoEF)
+    Tuple(((L_NoEF_BSL(n),), (y_obs_NoEF,)) for n in 50:50:500)
+    ) 
 
+######## EF Alone
 
-# EF
-const EMF = ConstantEF(1.0)
-const prior_EF = DistributionGenerator(SingleCellModel_EF, product_distribution(vec([
-    Uniform(int...) for int in prior_support
-])))
-const K_EF = PerturbationKernel{SingleCellModel_EF}(
-    MvNormal(zeros(8), diagm(0=>fill(0.01, 8)))
-)
-const y_obs_EF = EF_displacements
-const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
+export Σ_EF_BSL_IS, Σ_EF_BSL_SMC
+
 L_EF_BSL(n) = BayesianSyntheticLikelihood(F_EF, numReplicates=n)
-L_EF_CSL(n,i) = BayesianSyntheticLikelihood(F_EF, numReplicates=n, numIndependent=i)
-
-export Σ_EF_BSL_MC, Σ_EF_BSL_IS, Σ_EF_BSL_SMC, Σ_EF_CSL_MC
-const Σ_EF_BSL_MC = MCMCProposal(prior_EF, K_EF, L_EF_BSL(500), y_obs_EF)
-const Σ_EF_BSL_IS = ISProposal(prior_EF, L_EF_BSL(500), y_obs_EF)
+const Σ_EF_BSL_IS = ISProposal(prior_FullModel, L_EF_BSL(500), y_obs_EF)
 const Σ_EF_BSL_SMC = SMCWrapper(
-    prior_EF,
-    (
-        ((L_EF_BSL( 50),), (y_obs_EF,)),
-        ((L_EF_BSL(100),), (y_obs_EF,)),
-        ((L_EF_BSL(150),), (y_obs_EF,)),
-        ((L_EF_BSL(200),), (y_obs_EF,)),
-        ((L_EF_BSL(250),), (y_obs_EF,)),
-        ((L_EF_BSL(300),), (y_obs_EF,)),
-        ((L_EF_BSL(350),), (y_obs_EF,)),
-        ((L_EF_BSL(400),), (y_obs_EF,)),
-        ((L_EF_BSL(450),), (y_obs_EF,)),
-        ((L_EF_BSL(500),), (y_obs_EF,)),
-    )
+    prior_FullModel,
+    Tuple(((L_EF_BSL(n),), (y_obs_EF,)) for n in 50:50:500)
 )
-const Σ_EF_CSL_MC = MCMCProposal(prior_EF, K_EF, L_EF_CSL(500, 5), y_obs_EF)
 
-# Joint
-export Σ_Joint_BSL_MC, Σ_Joint_BSL_IS, Σ_Joint_CSL_MC, Σ_Joint_BSL_SMC
-const Σ_Joint_BSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
-const Σ_Joint_BSL_IS = ISProposal(prior_EF, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
+######## Joint (Simultaneous)
+
+export Σ_Joint_BSL_IS, Σ_Joint_BSL_SMC
+
+const Σ_Joint_BSL_IS = ISProposal(prior_FullModel, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
 const Σ_Joint_BSL_SMC = SMCWrapper(
-    prior_EF,
-    (
-        ((L_NoEF_BSL( 50), L_EF_BSL( 50)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(100), L_EF_BSL(100)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(150), L_EF_BSL(150)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(200), L_EF_BSL(200)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(250), L_EF_BSL(250)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(300), L_EF_BSL(300)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(350), L_EF_BSL(350)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(400), L_EF_BSL(400)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(450), L_EF_BSL(450)), (y_obs_NoEF, y_obs_EF)),
-        ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF)),
-    )
+    prior_FullModel,
+    Tuple(((L_NoEF_BSL(n), L_EF_BSL(n)), (y_obs_NoEF, y_obs_EF)) for n in 50:50:500)
 )
-const Σ_Joint_CSL_MC = MCMCProposal(prior_EF, K_EF, (L_NoEF_CSL(500 , 5), L_EF_CSL(500, 5)), (y_obs_NoEF, y_obs_EF))
 
+######## Joint (Sequential)
+# The following are functions because they depend on previously simulated data
+
+export prior_Sequential
+function prior_Sequential()
+    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
+    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
+    return ProductGenerator(q, prior_Bias)
+end
+
+export Σ_Sequential_BSL_IS, Σ_Sequential_BSL_SMC
+function Σ_Sequential_BSL_IS(prior=prior_Sequential())
+    return ISProposal(prior, (L_EF_BSL(500),), (y_obs_EF,))
+end
+function Σ_Sequential_BSL_SMC(prior=prior_Sequential())
+    return SMCWrapper(
+        prior,
+        Tuple(((L_EF_BSL(n),), (y_obs_EF,)) for n in 50:50:500)
+    )
+end
+
+########## I/O Functions
 export see_parameters_NoEF, see_parameters_Joint
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
-    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel_NoEF)
+    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
     T = t[generation]
     C = (cols===nothing) ? (1:4) : cols
     fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
 end
 
 function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
-    t = load_sample("./applications/electro/Joint_BSL_SMC.jld", SingleCellModel_EF)
+    t = load_sample("./applications/electro/Joint_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
     T = t[generation]
     C = cols===nothing ? (1:8) : cols
     fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
 end
-
-
 
 end
