@@ -51,25 +51,17 @@ end
 function (q::SequentialImportanceDistribution{Θ, W, Π})(; kwargs...) where Θ where W where Π
     # Complicated case only if some weights are negative
     u = choose_defence(q)
-    # Select from defence component...
-    if rand() < u
-        θ, = q.defence(; kwargs...)
-    # ...or from positive mixture
-    else
-        θ, = sample(q.K_θ, q.w_A)(; kwargs...)
-#       isfinite(logpdf(q.defence, θ) || (return q(; kwargs...))
-    end
+    # Select from defence component or from perturbations around a random (positive-weighted) parameter value
+    θ, = rand()<u ? q.defence(; kwargs...) : sample(q.K_θ, q.w_A)(; kwargs...)
+    # Truncate to the support of the defence component
+    isfinite(logpdf(q.defence, θ)) || (return q(; kwargs...))
 
     # Rejection step to ensure selection from max(0, F-G) 
     F, G, p, δ = FG(θ, q)
     β = G/F
     γ = δ*p/F
 
-    if rand() < max(γ, 1-β)
-        return (θ, log(δ*p + (1-δ)*max(0, F-G)))
-    else
-        return q(; kwargs...)
-    end
+    return rand()<max(γ, 1-β) ? (θ, log(δ*p + (1-δ)*max(0, F-G))) : q(; kwargs...)
 end
 
 function logpdf(q::SequentialImportanceDistribution{Θ}, θ::Θ) where Θ
