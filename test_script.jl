@@ -22,5 +22,7 @@ L_bsl = BayesianSyntheticLikelihood(F, numReplicates=500)
 L_csl = BayesianSyntheticLikelihood(F, numReplicates=500, numIndependent=10)
 
 C0 = diagm(0=>[0.02,0.02])
-Σ =  MCMCProposal(prior, C0, L_bsl, y_obs)
-Σc = MCMCProposal(prior, C0, L_csl, y_obs)
+# Σ =  MCMCProposal(prior, C0, L_bsl, y_obs)
+# Σc = MCMCProposal(prior, C0, L_csl, y_obs)
+
+Σ = ISProposal(prior, L_bsl, y_obs)
