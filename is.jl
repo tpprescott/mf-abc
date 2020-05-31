@@ -62,7 +62,7 @@ function importance_sample(
     I_kw = Iterators.repeated(kwargs)
     I = zip(I_Σ, I_kw)
     
-    b = pmap(_batch, Iterators.take(I, numSample))
+    b = @showprogress pmap(_batch, Iterators.take(I, numSample))
     t = table(b)
     
     # Importance weighting
