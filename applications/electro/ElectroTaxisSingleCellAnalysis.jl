@@ -92,4 +92,11 @@ function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
     fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
 end
 
+function see_parameters_Sequential(; generation::Int64=10, cols=nothing, kwargs...)
+    t = load_sample("./applications/electro/Sequential_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
+    T = t[generation]
+    C = cols===nothing ? (1:8) : cols
+    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+end
+
 end
