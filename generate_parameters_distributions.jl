@@ -22,7 +22,7 @@ function logpdf(q::DistributionGenerator{Θ}, θ::Θ) where Θ<:AbstractModel
     return logpdf(q.d, v)
 end
 
-function make_array(θ::Θ) where Θ<:AbstractModel
+function make_array(θ::Θ) where Θ<:Union{NamedTuple, Tuple}
     dim = length(θ)
     if dim==1
         return θ[1]
@@ -30,9 +30,8 @@ function make_array(θ::Θ) where Θ<:AbstractModel
         return [values(θ)...]
     end
 end
-function make_array(θ::AbstractArray{Θ,1}) where Θ<:AbstractModel
+function make_array(θ::AbstractArray{Θ,1}) where Θ<:Union{NamedTuple, Tuple}
     dim = length(θ[1])
-    N = length(θ)
     if dim==1
         return make_array.(θ)   
     else
