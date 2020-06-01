@@ -174,24 +174,38 @@ include("synthetic_bayes.jl")
 
 export save_sample, load_sample
 function save_sample(fn::String, t::Array{IndexedTable,1})
-    θ = LikelihoodFree.make_array.(select.(t, :θ))
+    θ = make_array.(select.(t, :θ))
     w = select.(t, :weight)
-    logww = select.(t, :logww)
+    logww = make_array.(select.(t, :logww))
     logp = select.(t, :logp)
     logq = select.(t, :logq)
     save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq)
     println("Success! Saved to $(fn)")
     return nothing
 end
+
+function make_unarray(x::Array{X, 1}, ::Type{Θ}) where X where Θ<:AbstractModel
+    return [Θ(x_i) for x_i in x]
+end
+function make_unarray(x::Array{X, 2}, ::Type{Θ}) where X where Θ<:AbstractModel
+    return [Θ(selectdim(x, 2, n)) for n in 1:size(x, 2)]
+end
+function make_unarray(x::Array{X, 1}) where X
+    return [Tuple(x_i) for x_i in x]
+end
+function make_unarray(x::Array{X, 2}) where X
+    return [Tuple(selectdim(x, 2, n)) for n in 1:size(x, 2)]
+end
+
 function load_sample(fn::String, ::Type{Θ}) where Θ<:AbstractModel
     data = load(fn)
     N = length(data["θ"])
     t = map(
         i-> table((
-                θ = Θ.([data["θ"][i][:,n] for n in 1:size(data["θ"][i], 2)]),
+                θ = make_unarray(data["θ"][i], Θ),
                 logp = data["logp"][i],
                 logq = data["logq"][i],
-                logww = data["logww"][i],
+                logww = make_unarray(data["logww"][i]),
                 weight = data["w"][i],
         )), 
         1:N)
