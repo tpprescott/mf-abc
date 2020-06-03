@@ -106,7 +106,7 @@ end
 const noise_shape = [complex(0.0), complex(1.0)]
 function (F::SingleCellSimulator)(; 
     polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64,
-    EF_speed_change::Float64=0.0, EF_polarity_bias::Float64=0.0, EF_position_bias::Float64=0.0, EF_alignment_bias::Float64=0.0,
+    speed_change::Float64=0.0, polarity_bias::Float64=0.0, position_bias::Float64=0.0, alignment_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
     output_trajectory=false, kwargs...)
 
@@ -116,10 +116,10 @@ function (F::SingleCellSimulator)(;
         σ=σ, 
         β=β, 
         λ=λ, 
-        γ_polarity = 0.5*EF_polarity_bias*σ^2, # Dimensionalise the parameter
-        γ_speed = EF_speed_change, # Keep parameter nondimensional
-        γ_position = EF_position_bias*polarised_speed, # Dimensionalise the parameter
-        γ_alignment = EF_alignment_bias*polarised_speed, # Dimensionalise the parameter
+        γ_polarity = 0.5*polarity_bias*σ^2, # Dimensionalise the parameter
+        γ_speed = speed_change, # Keep parameter nondimensional
+        γ_position = position_bias*polarised_speed, # Dimensionalise the parameter
+        γ_alignment = alignment_bias*polarised_speed, # Dimensionalise the parameter
     )
     
     independentFlag = W === nothing

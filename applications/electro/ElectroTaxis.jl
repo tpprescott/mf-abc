@@ -5,22 +5,21 @@ using Statistics
 using CSV
 
 # Parameter values
-export SingleCellModel, SingleCellBiases
+export SingleCellModel, SpeedChange, PolarityBias, PositionBias, AlignmentBias, SingleCellBiases
 
+# Base model
 SingleCellModel = NamedTuple{(
     :polarised_speed,
     :EB_on,
     :EB_off,
     :σ,
 ), NTuple{4, Float64}}
-
 # All the additional parameters are nondimensional and correspond to presence or absence of EM field of nondimensionalised magnitude 1 only
-SingleCellBiases = NamedTuple{(
-    :EF_speed_change,   # Nondimensional
-    :EF_polarity_bias,  # Nondimensional
-    :EF_position_bias,  # Nondimensional
-    :EF_alignment_bias, # Nondimensional
-), NTuple{4, Float64}}
+SpeedChange = NamedTuple{(:speed_change,), Tuple{Float64}}
+PolarityBias = NamedTuple{(:polarity_bias,), Tuple{Float64}}
+PositionBias = NamedTuple{(:position_bias,), Tuple{Float64}}
+AlignmentBias = NamedTuple{(:alignment_bias,), Tuple{Float64}}
+SingleCellBiases = merge(SpeedChange, PolarityBias, PositionBias, AlignmentBias)
 
 function get_displacements(y::AbstractArray{Complex{Float64}, 1})
     summary = Array{Float64,1}(undef, 4)
