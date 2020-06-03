@@ -16,7 +16,7 @@ const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
 
 export prior_EF_powerset, y_obs_EF, F_EF
-const prior_EF_powerset = [ProductGenerator(prior_NoEF, prior_combination...) for prior_combination in powerset(bias_prior_components)]
+const prior_EF_powerset = [ProductGenerator(prior_combination...) for prior_combination in powerset(bias_prior_components,1)]
 const y_obs_EF = EF_displacements
 const EMF = ConstantEF(1.0)
 const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
@@ -61,7 +61,12 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
 # The following are functions because they depend on previously simulated data
 
 export prior_Sequential
-function prior_Sequential(prior_bias::AbstractGenerator = prior_Biases)
+function prior_Sequential()
+    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
+    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
+    return q
+end
+function prior_Sequential(prior_bias::AbstractGenerator)
     t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
     q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
     return ProductGenerator(q, prior_bias)
@@ -88,14 +93,26 @@ _join(a::Symbol, b::Symbol) = Symbol(a,:_,b)
 _join(a::Symbol, b::Symbol, c::Symbol...) = _join(_join(a,b), c...)
 _join(a::Symbol) = a
 _join() = :_
+
 # Deal with all possible mechanisms
 function infer_all_models()
-    for prior in prior_EF_powerset
-        fn_bits = fieldnames(domain(prior))[5:end]
-        fn_id = _join(fn_bits...)
-        fn = "./applications/electro/EF_Combinatorial_"*String(fn_id)*"jld"
+    N = Tuple(1000:1000:10000)
+    σ = Tuple(2.0 .^ (-9:1:0))
+
+    # Base model
+    prior = prior_Sequential()
+    Σ = Σ_Sequential_BSL_SMC(prior)
+    t = smc_sample(Σ, N, σ)
+    fn = "./applications/electro/EF_Combinatorial__.jld"
+    save_sample(fn, t)
+
+    # All other models
+    for prior in prior_Sequential(prior_EF_powerset)
         Σ = Σ_Sequential_BSL_SMC(prior)
-        t = smc_sample(Σ, Tuple(1000:1000:10000), Tuple(2.0 .^ (-9:1:0)))
+        t = smc_sample(Σ, N, σ)
+        fn_bits = fieldnames(LikelihoodFree.domain(prior))[5:end]
+        fn_id = _join(fn_bits...)
+        fn = "./applications/electro/EF_Combinatorial_"*String(fn_id)*".jld"
         save_sample(fn, t)
     end
     return nothing
