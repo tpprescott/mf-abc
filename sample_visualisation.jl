@@ -64,9 +64,9 @@ end
         for j = 1:n
             j==i && continue
             vj = view(mat,:,j)
-            subplot := indices[i,j]
             update_axes_guides(plotattributes, labs, lims, i, j, n)
                 @series begin
+                    subplot := indices[i,j]
                     seriestype := :scatter
                     markerstrokewidth --> 0
                     marker_z --> (i>j ? w : logww)

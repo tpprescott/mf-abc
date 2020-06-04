@@ -24,10 +24,11 @@ struct SequentialImportanceDistribution{Θ, W<:Weights, Π<:AbstractGenerator{Θ
         length(θ)==length(importance_weights) || error("Mismatch between parameter samples and importance weights")
         dim = length(θ[1])
 
-        importance_weights ./= sum(importance_weights)
-        AR = isnz.(importance_weights)
-        w_A = Weights(pospart.(importance_weights[AR]))
-        w_R = Weights(negpart.(importance_weights[AR]))
+        iw = copy(importance_weights)
+        iw ./= sum(iw)
+        AR = isnz.(iw)
+        w_A = Weights(pospart.(iw[AR]))
+        w_R = Weights(negpart.(iw[AR]))
 
         covariance_matrix = dim==1 ? cov(make_array(θ[AR]), w_A, corrected=false) : cov(make_array(θ[AR]), w_A, 2, corrected=false)
         K_θ = broadcast(PerturbationKernel, θ[AR], Ref(covariance_matrix))
