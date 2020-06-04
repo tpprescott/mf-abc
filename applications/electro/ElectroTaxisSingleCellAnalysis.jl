@@ -3,27 +3,37 @@ module ElectroTaxisSingleCellAnalysis
 using ..ElectroTaxis
 using ..LikelihoodFree
 using Distributions, LinearAlgebra, IndexedTables, Combinatorics
+import .LikelihoodFree.domain
+import .LikelihoodFree.ndims
 
 const prior_support = [(0.001, 3) (0,5) (0,5) (0.001, 2) (0,2) (0,2) (0,2) (0,2)]
-const bias_model_components = [SpeedChange, PolarityBias, PositionBias, AlignmentBias]
-const bias_prior_components = broadcast((x,y)->DistributionGenerator(x, Uniform(y...)), bias_model_components, prior_support[5:8])
+const prior_flat_components = Dict(
+    :SCM => DistributionGenerator(SingleCellModel, product_distribution(vec([Uniform(interval...) for interval in prior_support[1:4]]))),
+    :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
+    :Pol => DistributionGenerator(PolarityBias, Uniform(prior_support[6]...)),
+    :Pos => DistributionGenerator(PositionBias, Uniform(prior_support[7]...)),
+    :Ali => DistributionGenerator(AlignmentBias, Uniform(prior_support[8]...)),
+)
 
-export prior_NoEF, y_obs_NoEF, F_NoEF
-const prior_NoEF = DistributionGenerator(SingleCellModel, product_distribution(vec([
-    Uniform(interval...) for interval in prior_support[1:4]
-])))
+# ALL POSSIBLE MODELS FROM NoEF TO ALL BIASES
+all_labels = [[:SCM, lab...] for lab in powerset([:Spe, :Pol, :Pos, :Ali])]
+form_generator(components::Dict, k1) = (Symbol(k1) => components[k1])
+form_generator(components::Dict, k1, keys...) = (Symbol(k1,keys...) => ProductGenerator(components[k1], (components[k] for k in keys)...))
+
+export model_all, prior_flat_all
+const prior_flat_all = Dict(form_generator(prior_flat_components, k...) for k in all_labels)
+const model_all = Dict(k => LikelihoodFree.domain(prior_flat_all[k]) for k in keys(prior_flat_all))
+
+export y_obs_NoEF, F_NoEF, y_obs_EF, F_EF
 const y_obs_NoEF = NoEF_displacements
 const F_NoEF = SingleCellSimulator(σ_init=0.1)
-
-export prior_EF_powerset, y_obs_EF, F_EF
-const prior_EF_powerset = [ProductGenerator(prior_combination...) for prior_combination in powerset(bias_prior_components,1)]
 const y_obs_EF = EF_displacements
 const EMF = ConstantEF(1.0)
 const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
 
-export prior_Biases, prior_FullModel
-const prior_Biases = ProductGenerator(bias_prior_components...)
-const prior_FullModel = ProductGenerator(prior_NoEF, prior_Biases)
+export prior_NoEF, prior_Full
+const prior_NoEF = prior_flat_all[:SCM]
+const prior_Full = prior_flat_all[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
 
 ######### NoEF
 
@@ -41,9 +51,9 @@ const Σ_NoEF_BSL_SMC = SMCWrapper(
 export Σ_EF_BSL_IS, Σ_EF_BSL_SMC
 
 L_EF_BSL(n) = BayesianSyntheticLikelihood(F_EF, numReplicates=n)
-const Σ_EF_BSL_IS = ISProposal(prior_FullModel, L_EF_BSL(500), y_obs_EF)
+const Σ_EF_BSL_IS = ISProposal(prior_Full, L_EF_BSL(500), y_obs_EF)
 const Σ_EF_BSL_SMC = SMCWrapper(
-    prior_FullModel,
+    prior_Full,
     Tuple(((L_EF_BSL(n),), (y_obs_EF,)) for n in 50:50:500)
 )
 
@@ -51,75 +61,98 @@ const Σ_EF_BSL_SMC = SMCWrapper(
 
 export Σ_Joint_BSL_IS, Σ_Joint_BSL_SMC
 
-const Σ_Joint_BSL_IS = ISProposal(prior_FullModel, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
+const Σ_Joint_BSL_IS = ISProposal(prior_Full, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
 const Σ_Joint_BSL_SMC = SMCWrapper(
-    prior_FullModel,
+    prior_Full,
     Tuple(((L_NoEF_BSL(n), L_EF_BSL(n)), (y_obs_NoEF, y_obs_EF)) for n in 50:50:500)
 )
 
 ######## Joint (Sequential)
 # The following are functions because they depend on previously simulated data
 
-export prior_Sequential
-function prior_Sequential()
+export posterior_NoEF
+function posterior_NoEF()
     t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
-    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
+    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
     return q
 end
-function prior_Sequential(prior_bias::AbstractGenerator)
-    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
-    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
-    return ProductGenerator(q, prior_bias)
-end
-function prior_Sequential(prior_bias::AbstractGenerator...)
-    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
-    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of q equal to that of prior_NoEF
-    return [ProductGenerator(q, π) for π in prior_bias]
-end
-prior_Sequential(x) = prior_Sequential(x...)
+const prior_sequential_components = Dict(
+    :SCM => posterior_NoEF(),
+    :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
+    :Pol => DistributionGenerator(PolarityBias, Uniform(prior_support[6]...)),
+    :Pos => DistributionGenerator(PositionBias, Uniform(prior_support[7]...)),
+    :Ali => DistributionGenerator(AlignmentBias, Uniform(prior_support[8]...)),
+)
+
+export prior_sequential_all, prior_sequential_full
+const prior_sequential_all = Dict(form_generator(prior_sequential_components, k...) for k in all_labels)
+const prior_sequential_full = prior_sequential_all[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
 
 export Σ_Sequential_BSL_IS, Σ_Sequential_BSL_SMC
-function Σ_Sequential_BSL_IS(prior)
+function Σ_Sequential_BSL_IS(prior = prior_sequential_full)
     return ISProposal(prior, (L_EF_BSL(500),), (y_obs_EF,))
 end
-function Σ_Sequential_BSL_SMC(prior)
+function Σ_Sequential_BSL_SMC(prior = prior_sequential_full)
     return SMCWrapper(
         prior,
         Tuple(((L_EF_BSL(n),), (y_obs_EF,)) for n in 50:50:500)
     )
 end
 
-_join(a::Symbol, b::Symbol) = Symbol(a,:_,b)
-_join(a::Symbol, b::Symbol, c::Symbol...) = _join(_join(a,b), c...)
-_join(a::Symbol) = a
-_join() = :_
-
 # Deal with all possible mechanisms
+export infer_all_models
 function infer_all_models()
     N = Tuple(1000:1000:10000)
     σ = Tuple(2.0 .^ (-9:1:0))
 
-    # Base model
-    prior = prior_Sequential()
-    Σ = Σ_Sequential_BSL_SMC(prior)
-    t = smc_sample(Σ, N, σ)
-    fn = "./applications/electro/EF_Combinatorial__.jld"
-    save_sample(fn, t)
-
-    # All other models
-    for prior in prior_Sequential(prior_EF_powerset)
+    for (id, prior) in prior_sequential_all
         Σ = Σ_Sequential_BSL_SMC(prior)
         t = smc_sample(Σ, N, σ)
-        fn_bits = fieldnames(LikelihoodFree.domain(prior))[5:end]
-        fn_id = _join(fn_bits...)
-        fn = "./applications/electro/EF_Combinatorial_"*String(fn_id)*".jld"
+        fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
         save_sample(fn, t)
     end
     return nothing
 end
 
+export load_Combinatorial
+function load_Combinatorial()
+    return Dict(Θ => load_Combinatorial(id, Θ) for (id, Θ) in model_all)
+end
+function load_Combinatorial(id::Symbol, ::Type{Θ}) where Θ
+    fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
+    t = load_sample(fn, Θ)
+    return t[end]
+end
+
+export sequential_AIC, sequential_BIC
+domain(t::IndexedTable) = eltype(t.columns.θ)
+# The following functions are specific to the sequential inference task, since logp is the previous experiment's posterior (using a flat prior)
+function sequential_AIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
+    d, logLhat = sequential_xIC(T, k)
+    return AIC(d, logLhat)
+end
+function sequential_BIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
+    d, logLhat = sequential_xIC(T, k)
+    return BIC(d, 100, logLhat)
+end
+function sequential_xIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
+    Θ = model_all[k]
+    d = ndims(Θ)
+
+    t = T[k]
+    flat_prior = prior_flat_all[k]
+
+    approx_NoEF_loglikelihood = select(t, :logp) - logpdf.(Ref(flat_prior), select(t, :θ))
+    logLhat = maximum(sum.(select(t, :logww)) .+ approx_NoEF_loglikelihood)
+    
+    return d, logLhat
+end
+AIC(d, logLhat) = 2*d - 2*logLhat
+BIC(d, n, logLhat) = d*log(n) - 2*logLhat
+
+
 ########## I/O Functions
-export see_parameters_NoEF, see_parameters_Joint
+export see_parameters_NoEF, see_parameters_Joint, see_parameters_Sequential
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
     t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
     T = t[generation]
