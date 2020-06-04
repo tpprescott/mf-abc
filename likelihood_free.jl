@@ -3,8 +3,7 @@ module LikelihoodFree
 using IndexedTables, Distributed, ProgressMeter, JLD
 import Distributions.loglikelihood
 
-export select
-
+export select, merge, ndims, domain, domains
 import Base.merge, Base.merge_types, Base.merge_names
 
 export AbstractModel, AbstractGenerator, AbstractLikelihoodFunction
@@ -16,15 +15,21 @@ function merge(a::Type{A}, b::Type{B}) where A<:AbstractModel where B<:AbstractM
     return NamedTuple{names, types}
 end
 merge(a,b,c...) = merge(merge(a,b), c...)
+merge(a) = a
 function marginalise(a::AbstractModel, ::Type{Θ})::Θ where Θ<:AbstractModel
     return Θ(get.(Ref(a), fieldnames(Θ), nothing))
 end
+import Base.ndims
+ndims(::Type{T}) where T<:AbstractModel = length(T.names)
+ndims(::T) where T<:AbstractModel = ndims(T)
 
 # The generator will generate the model according to some distribution (rejection sampling or importance sampling)
 abstract type AbstractGenerator{Θ<:AbstractModel} end
 domain(::Type{T}) where T<:AbstractGenerator{Θ} where Θ = Θ
 domain(q::AbstractGenerator) = domain(typeof(q))
-
+domains(q) = domain(q)
+ndims(::Type{T}) where T<:AbstractGenerator = ndims(domain(T))
+ndims(q::AbstractGenerator) = ndims(domain(q))
 
 abstract type AbstractLikelihoodFunction end
 LikelihoodObservationPair{TL, TX} = Tuple{TL, TX} where TX where TL<:AbstractLikelihoodFunction
