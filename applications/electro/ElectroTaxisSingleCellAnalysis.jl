@@ -116,7 +116,7 @@ end
 
 export load_Combinatorial
 function load_Combinatorial()
-    return Dict(Θ => load_Combinatorial(id, Θ) for (id, Θ) in model_all)
+    return Dict(id => load_Combinatorial(id, Θ) for (id, Θ) in model_all)
 end
 function load_Combinatorial(id::Symbol, ::Type{Θ}) where Θ
     fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
@@ -125,7 +125,6 @@ function load_Combinatorial(id::Symbol, ::Type{Θ}) where Θ
 end
 
 export sequential_AIC, sequential_BIC
-domain(t::IndexedTable) = eltype(t.columns.θ)
 # The following functions are specific to the sequential inference task, since logp is the previous experiment's posterior (using a flat prior)
 function sequential_AIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
     d, logLhat = sequential_xIC(T, k)
@@ -151,27 +150,46 @@ AIC(d, logLhat) = 2*d - 2*logLhat
 BIC(d, n, logLhat) = d*log(n) - 2*logLhat
 
 
-########## I/O Functions
+########## Writeup Functions
 export see_parameters_NoEF, see_parameters_Joint, see_parameters_Sequential
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
     t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
     T = t[generation]
     C = (cols===nothing) ? (1:4) : cols
-    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+    fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 
 function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
     t = load_sample("./applications/electro/Joint_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
     T = t[generation]
     C = cols===nothing ? (1:8) : cols
-    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+    fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 
-function see_parameters_Sequential(; generation::Int64=10, cols=nothing, kwargs...)
+function see_parameters_SequentialFull(; generation::Int64=10, cols=nothing, kwargs...)
     t = load_sample("./applications/electro/Sequential_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
     T = t[generation]
     C = cols===nothing ? (1:8) : cols
-    fig = parameterscatter(filter(r->r.weight>0, T), xlim=prior_support[C]; columns=C, kwargs...)
+    fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
+end
+
+function see_parameters_SequentialBest(; generation::Int64=10, cols=nothing, kwargs...)
+    t = load_sample("./applications/electro/EF_Combinatorial_SCMSpePolPos.jld", merge(SingleCellModel, SpeedChange, PolarityBias, PositionBias))
+    T = t[generation]
+    C = cols===nothing ? (1:7) : cols
+    fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
+end
+
+using StatsPlots
+export see_model_selection
+function see_model_selection(; kwargs...)
+    T = load_Combinatorial()
+    lbl = [Symbol(sym...) for sym in all_labels]
+    nam = repeat(lbl, outer=2)
+    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+    AICVec = [sequential_AIC(T, k) for k in lbl]
+    BICVec = [sequential_BIC(T, k) for k in lbl]
+    fig = groupedbar(nam, hcat(AICVec, BICVec); group=ctg, xrotation=45, ylim=[800,1100], kwargs...)
 end
 
 end
