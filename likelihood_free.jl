@@ -1,6 +1,6 @@
 module LikelihoodFree
 
-using IndexedTables, Distributed, ProgressMeter, JLD
+using IndexedTables, Distributed, ProgressMeter, JLD, InvertedIndices
 import Distributions.loglikelihood
 
 export select, merge, ndims, domain, domains
@@ -53,48 +53,56 @@ function likelihood(
     (L, y_obs)::LikelihoodObservationPair{TL, TX},
     θ::AbstractModel,
     L_past...;
+    test_idx::AbstractArray{Int64,1} = Array{Int64,1}(),
     kwargs...
-)::NamedTuple{(:w, :L), Tuple{Float64, TL}} where TL<:AbstractLikelihoodFunction where TX
+)::NamedTuple{(:w, :ww, :test, :L), Tuple{Float64, Tuple{Float64}, Tuple{Float64}, TL}} where TL<:AbstractLikelihoodFunction where TX
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
-    w = _likelihood(L_θ, y_obs; kwargs...)
-    return (w = w, ww = (w,), L = L_θ)
+    w = _likelihood(L_θ, y_obs[InvertedIndices.Not(test_idx)]; kwargs...)
+    test = _likelihood(L_θ, y_obs[test_idx]; kwargs...)
+    return (w = w, ww = (w,), test = (test,), L = L_θ)
 end
 
 function loglikelihood(
     (L, y_obs)::LikelihoodObservationPair{TL, TX}, 
     θ::AbstractModel, 
     L_past...; 
+    test_idx::AbstractArray{Int64,1} = Array{Int64,1}(),
     kwargs...
-)::NamedTuple{(:logw, :L), Tuple{Float64, TL}} where TL<:AbstractLikelihoodFunction where TX
+)::NamedTuple{(:logw, :logww, :logtest, :L), Tuple{Float64, Tuple{Float64}, Tuple{Float64}, TL}} where TL<:AbstractLikelihoodFunction where TX
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
-    logw = _loglikelihood(L_θ, y_obs; kwargs...)
-    return (logw = logw, logww = (logw,), L = L_θ)
+    logw = _loglikelihood(L_θ, y_obs[InvertedIndices.Not(test_idx)]; kwargs...)
+    logtest = _loglikelihood(L_θ, y_obs[test_idx]; kwargs...)
+    return (logw = logw, logww = (logw,), logtest = (logtest,), L = L_θ)
 end
 
 function likelihood(
     (L, y_obs)::LikelihoodObservationSet{N, TLL, TYY}, 
     θ::AbstractModel,
     L_past...; 
+    test_idx::NTuple{N, AbstractArray{Int64,1}} = Tuple(fill(Array{Int64,1}(),N)),
     kwargs...
-)::NamedTuple{(:w, :ww, :L), Tuple{Float64, NTuple{N, Float64}, TLL}} where TYY where TLL<:NTuple{N, AbstractLikelihoodFunction} where N
+)::NamedTuple{(:w, :ww, :test, :L), Tuple{Float64, NTuple{N, Float64}, NTuple{N, Float64}, TLL}} where TYY where TLL<:NTuple{N, AbstractLikelihoodFunction} where N
 
     L_θ_set = _condition.(L, Ref(θ), L_past...; kwargs...)
-    ww = _likelihood.(L_θ_set, y_obs; kwargs...)
-    return (w = prod(ww), ww = ww, L = L_θ_set)
+    ww = _likelihood.(L_θ_set, getindex.(y_obs, InvertedIndices.Not.(test_idx)); kwargs...)
+    test = _likelihood.(L_θ_set, getindex.(y_obs, test_idx); kwargs...)
+    return (w = prod(ww), ww = ww, test = test, L = L_θ_set)
 end
 
 function loglikelihood(
     (L, y_obs)::LikelihoodObservationSet{N, TLL, TYY}, 
     θ::AbstractModel,
     L_past...; 
+    test_idx::NTuple{N, AbstractArray{Int64,1}} = Tuple(fill(Array{Int64,1}(), N)),
     kwargs...
-)::NamedTuple{(:logw, :logww, :L), Tuple{Float64, NTuple{N, Float64}, TLL}} where TYY where TLL<:NTuple{N, AbstractLikelihoodFunction} where N
+)::NamedTuple{(:logw, :logww, :logtest, :L), Tuple{Float64, NTuple{N, Float64}, NTuple{N, Float64}, TLL}} where TYY where TLL<:NTuple{N, AbstractLikelihoodFunction} where N
 
     L_θ_set = _condition.(L, Ref(θ), L_past...; kwargs...)
-    logww = _loglikelihood.(L_θ_set, y_obs; kwargs...)
-    return (logw = sum(logww), logww = logww, L = L_θ_set)
+    logww = _loglikelihood.(L_θ_set, getindex.(y_obs, InvertedIndices.Not.(test_idx)); kwargs...)
+    logtest = _loglikelihood.(L_θ_set, getindex.(y_obs, test_idx); kwargs...)
+    return (logw = sum(logww), logww = logww, logtest = logtest, L = L_θ_set)
 end
 
 include("generate_parameters.jl")

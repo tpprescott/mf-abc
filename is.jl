@@ -46,7 +46,7 @@ function propose(
     proposal = rand(Σ.q; prior=Σ.prior, kwargs...)
     isfinite(proposal.logp) || (return propose(Σ, args...; kwargs...))
     logL = loglikelihood(Σ.lh_set, proposal.θ; kwargs...)
-    return merge(proposal, (logw = logL.logw, logww = logL.logww))
+    return merge(proposal, (logw = logL.logw, logww = logL.logww, logtest = logL.logtest))
 end
 
 export importance_sample

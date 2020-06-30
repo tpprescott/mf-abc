@@ -1,5 +1,7 @@
 using StatsPlots, LaTeXStrings
+include("maxogram.jl")
 
+############################################
 export parameterweights
 
 @userplot ParameterWeights
@@ -85,7 +87,9 @@ function parameterweights(t::IndexedTable; columns, kwargs...)
     @df select(t, :θ) parameterweights(cols(columns), select(t, :weight); kwargs...)
 end
 
-include("maxogram.jl")
+############################################
+export parameterloglh
+
 @userplot ParameterLogLH
 recipetype(::Val{:parameterloglh}, args...) = ParameterLogLH(args...)
 

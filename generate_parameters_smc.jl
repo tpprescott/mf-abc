@@ -62,10 +62,10 @@ function (q::SequentialImportanceDistribution{Θ, W, Π})(; kwargs...) where Θ 
     β = G/F
     γ = δ*p/F
 
-    return rand()<max(γ, 1-β) ? (θ, log(δ*p + (1-δ)*max(0, F-G))) : q(; kwargs...)
+    return rand()<max(γ, 1-β) ? (θ, log(max(δ*p, F-G))) : q(; kwargs...)
 end
 
 function logpdf(q::SequentialImportanceDistribution{Θ}, θ::Θ) where Θ
     F, G, p, δ = FG(θ, q)
-    return iszero(p) ? -Inf : log(δ*p + (1-δ)*max(0, F-G))
+    return iszero(p) ? -Inf : log(max(δ*p, F-G))
 end
