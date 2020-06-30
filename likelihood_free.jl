@@ -54,7 +54,7 @@ function likelihood(
     θ::AbstractModel,
     L_past...;
     kwargs...
-)::NamedTuple{(:w, :L), Tuple{Float64, TL}} where TL<:AbstractLikelihoodFunction where TX
+)::NamedTuple{(:w, :logww, :L), Tuple{Float64, Tuple{Float64}, TL}} where TL<:AbstractLikelihoodFunction where TX
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
     w = _likelihood(L_θ, y_obs; kwargs...)
@@ -66,7 +66,7 @@ function loglikelihood(
     θ::AbstractModel, 
     L_past...; 
     kwargs...
-)::NamedTuple{(:logw, :L), Tuple{Float64, TL}} where TL<:AbstractLikelihoodFunction where TX
+)::NamedTuple{(:logw, :logww, :L), Tuple{Float64, Tuple{Float64}, TL}} where TL<:AbstractLikelihoodFunction where TX
 
     L_θ = _condition(L, θ, L_past...; kwargs...)
     logw = _loglikelihood(L_θ, y_obs; kwargs...)
