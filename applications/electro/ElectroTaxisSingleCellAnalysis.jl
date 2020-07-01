@@ -76,7 +76,7 @@ function posterior_NoEF()
     q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
     return q
 end
-const prior_sequential_components = Dict(
+prior_sequential_components() = Dict(
     :SCM => posterior_NoEF(),
     :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
     :Pol => DistributionGenerator(PolarityBias, Uniform(prior_support[6]...)),
@@ -85,14 +85,14 @@ const prior_sequential_components = Dict(
 )
 
 export prior_sequential_all, prior_sequential_full
-const prior_sequential_all = Dict(form_generator(prior_sequential_components, k...) for k in all_labels)
-const prior_sequential_full = prior_sequential_all[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
+prior_sequential_all() = Dict(form_generator(prior_sequential_components(), k...) for k in all_labels)
+prior_sequential_full() = prior_sequential_all()[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
 
 export Σ_Sequential_BSL_IS, Σ_Sequential_BSL_SMC
-function Σ_Sequential_BSL_IS(prior = prior_sequential_full)
+function Σ_Sequential_BSL_IS(prior = prior_sequential_full())
     return ISProposal(prior, (L_EF_BSL(500),), (y_obs_EF,))
 end
-function Σ_Sequential_BSL_SMC(prior = prior_sequential_full)
+function Σ_Sequential_BSL_SMC(prior = prior_sequential_full())
     return SMCWrapper(
         prior,
         Tuple(((L_EF_BSL(n),), (y_obs_EF,)) for n in 50:50:500)
@@ -105,7 +105,7 @@ function infer_all_models()
     N = Tuple(1000:1000:10000)
     σ = Tuple(2.0 .^ (-9:1:0))
 
-    for (id, prior) in prior_sequential_all
+    for (id, prior) in prior_sequential_all()
         Σ = Σ_Sequential_BSL_SMC(prior)
         t = smc_sample(Σ, N, σ)
         fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
