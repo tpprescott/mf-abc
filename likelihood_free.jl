@@ -190,9 +190,10 @@ function save_sample(fn::String, t::Array{IndexedTable,1})
     θ = make_array.(select.(t, :θ))
     w = select.(t, :weight)
     logww = make_array.(select.(t, :logww))
+    logtest = make_array.(select.(t, :logtest))
     logp = select.(t, :logp)
     logq = select.(t, :logq)
-    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq)
+    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq, "logtest", logtest)
     println("Success! Saved to $(fn)")
     return nothing
 end
@@ -219,6 +220,7 @@ function load_sample(fn::String, ::Type{Θ}) where Θ<:AbstractModel
                 logp = data["logp"][i],
                 logq = data["logq"][i],
                 logww = make_unarray(data["logww"][i]),
+                logtest = make_unarray(data["logtest"][i]),
                 weight = data["w"][i],
         )), 
         1:N)
