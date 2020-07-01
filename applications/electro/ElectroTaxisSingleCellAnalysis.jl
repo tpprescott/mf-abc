@@ -85,7 +85,10 @@ prior_sequential_components() = Dict(
 )
 
 export prior_sequential_all, prior_sequential_full
-prior_sequential_all() = Dict(form_generator(prior_sequential_components(), k...) for k in all_labels)
+function prior_sequential_all() 
+    prior_components = prior_sequential_components()
+    return Dict(form_generator(prior_components, k...) for k in all_labels)
+end
 prior_sequential_full() = prior_sequential_all()[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
 
 export Σ_Sequential_BSL_IS, Σ_Sequential_BSL_SMC
@@ -101,13 +104,13 @@ end
 
 # Deal with all possible mechanisms
 export infer_all_models
-function infer_all_models()
+function infer_all_models(; test_idx=Int64[])
     N = Tuple(1000:1000:10000)
     σ = Tuple(2.0 .^ (-9:1:0))
 
     for (id, prior) in prior_sequential_all()
         Σ = Σ_Sequential_BSL_SMC(prior)
-        t = smc_sample(Σ, N, σ)
+        t = smc_sample(Σ, N, scale = σ, test_idx = (test_idx,))
         fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
         save_sample(fn, t)
     end
