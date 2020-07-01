@@ -6,7 +6,7 @@ using Distributions, LinearAlgebra, IndexedTables, Combinatorics
 import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
-const prior_support = [(0.001, 3) (0,5) (0,5) (0.001, 2) (0,2) (0,2) (0,2) (0,2)]
+const prior_support = [(0.001, 3.0) (0.0, 5.0) (0.0, 5.0) (0.001, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0,2.0)]
 const prior_flat_components = Dict(
     :SCM => DistributionGenerator(SingleCellModel, product_distribution(vec([Uniform(interval...) for interval in prior_support[1:4]]))),
     :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
