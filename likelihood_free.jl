@@ -186,7 +186,7 @@ include("synthetic_bayes.jl")
 
 
 export save_sample, load_sample
-function save_sample(fn::String, t::Array{IndexedTable,1})
+function save_sample(fn::String, t::Array{<:IndexedTable,1})
     θ = make_array.(select.(t, :θ))
     w = select.(t, :weight)
     logww = make_array.(select.(t, :logww))

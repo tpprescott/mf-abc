@@ -85,7 +85,7 @@ end
 export posterior_NoEF
 function posterior_NoEF()
     t = load_sample("./applications/electro/Sequential_NoEF.jld", SingleCellModel)
-    q = SequentialImportanceDistribution(t, prior_NoEF)
+    q = SequentialImportanceDistribution(t[end], prior_NoEF)
     return q
 end
 prior_sequential_components() = Dict(
