@@ -70,10 +70,22 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
 ######## Joint (Sequential)
 # The following are functions because they depend on previously simulated data
 
+const test_idx_NoEF = 1:10
+const test_idx_EF = 1:10
+
+function construct_posterior_NoEF(; test_idx = test_idx_NoEF)
+    t1 = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
+    q1 = SequentialImportanceDistribution(t1[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
+    Σ = ISProposal(prior_NoEF, q1, L_NoEF_BSL(500), getindex(y_obs_NoEF, Not(test_idx)))
+    t = importance_sample(Σ, 10000)
+    q = SequentialImportanceDistribution(t, prior_NoEF)
+    save_sample("./applications/electro/Sequential_NoEF.jld")
+end
+
 export posterior_NoEF
 function posterior_NoEF()
-    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
-    q = SequentialImportanceDistribution(t[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
+    t = load_sample("./applications/electro/Sequential_NoEF.jld", SingleCellModel)
+    q = SequentialImportanceDistribution(t, prior_NoEF)
     return q
 end
 prior_sequential_components() = Dict(
@@ -104,7 +116,7 @@ end
 
 # Deal with all possible mechanisms
 export infer_all_models
-function infer_all_models(; test_idx=Int64[])
+function infer_all_models(; test_idx=test_idx_EF)
     N = Tuple(1000:1000:10000)
     σ = Tuple(2.0 .^ (-9:1:0))
 
