@@ -78,8 +78,8 @@ function construct_posterior_NoEF(; test_idx = test_idx_NoEF)
     q1 = SequentialImportanceDistribution(t1[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
     Σ = ISProposal(prior_NoEF, q1, L_NoEF_BSL(500), getindex(y_obs_NoEF, InvertedIndices.Not(test_idx)))
     t = importance_sample(Σ, 10000)
-    q = SequentialImportanceDistribution(t, prior_NoEF)
-    save_sample("./applications/electro/Sequential_NoEF.jld")
+    save_sample("./applications/electro/Sequential_NoEF.jld", t)
+    return nothing
 end
 
 export posterior_NoEF
