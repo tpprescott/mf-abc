@@ -167,14 +167,14 @@ BIC(d, n, logLhat) = d*log(n) - 2*logLhat
 
 const test_conditioner = ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF[test_idx_NoEF], y_obs_EF[test_idx_EF]))
 
-using Distributed, StatsBase
+using Distributed, StatsBase, ProgressMeter
 export posweight, test_loglikelihood
 
 posweight = row -> row.weight>0
 test_loglikelihood(row) = loglikelihood(test_conditioner, row.θ)
 function test_loglikelihood(t::IndexedTable)
     tt = filter(posweight, t)
-    logw = pmap(test_loglikelihood, tt).logw
+    logw = @showprogress pmap(test_loglikelihood, tt).logw
     wt = Weights(select(tt, :weights))
     return mean(logw, wt)
 end
