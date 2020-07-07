@@ -71,7 +71,7 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
 # The following are functions because they depend on previously simulated data
 
 using Random, StatsBase
-Random.seed!()
+Random.seed!(1)
 const test_idx_NoEF = sample(1:50, 10, replace=false)
 const test_idx_EF = sample(1:50, 10, replace=false)
 
