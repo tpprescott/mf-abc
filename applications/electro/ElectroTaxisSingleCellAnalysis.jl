@@ -175,7 +175,7 @@ test_loglikelihood(row) = loglikelihood(test_conditioner, row.θ).logw
 function test_loglikelihood(t::IndexedTable)
     tt = filter(posweight, t)
     logw = @showprogress pmap(test_loglikelihood, tt)
-    wt = Weights(select(tt, :weights))
+    wt = Weights(select(tt, :weight))
     return mean(logw, wt)
 end
 
