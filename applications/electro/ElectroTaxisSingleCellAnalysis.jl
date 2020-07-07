@@ -70,8 +70,13 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
 ######## Joint (Sequential)
 # The following are functions because they depend on previously simulated data
 
-const test_idx_NoEF = 1:10
-const test_idx_EF = 1:10
+using Random, StatsBase
+Random.seed!()
+const test_idx_NoEF = sample(1:50, 10, replace=false)
+const test_idx_EF = sample(1:50, 10, replace=false)
+
+# Check every worker has the same set of idx
+println(test_idx_NoEF)
 
 
 function construct_posterior_NoEF(; test_idx = test_idx_NoEF)
@@ -176,7 +181,10 @@ function test_loglikelihood(t::IndexedTable)
     tt = filter(posweight, t)
     logw = @showprogress pmap(test_loglikelihood, tt)
     wt = Weights(select(tt, :weight))
-    return mean(logw, wt)
+
+    F = maximum(logw)
+    w = exp.(logw .- F)
+    return log(mean(w, wt)) + F
 end
 
 ########## Writeup Functions
