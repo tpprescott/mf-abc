@@ -73,6 +73,7 @@ const Σ_Joint_BSL_SMC = SMCWrapper(
 const test_idx_NoEF = 1:10
 const test_idx_EF = 1:10
 
+
 function construct_posterior_NoEF(; test_idx = test_idx_NoEF)
     t1 = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
     q1 = SequentialImportanceDistribution(t1[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
@@ -164,6 +165,19 @@ end
 AIC(d, logLhat) = 2*d - 2*logLhat
 BIC(d, n, logLhat) = d*log(n) - 2*logLhat
 
+const test_conditioner = ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF[test_idx_NoEF], y_obs_EF[test_idx_EF]))
+
+using Distributed, StatsBase
+export posweight, test_loglikelihood
+
+posweight = row -> row.weight>0
+test_loglikelihood(row) = loglikelihood(test_conditioner, row.θ)
+function test_loglikelihood(t::IndexedTable)
+    tt = filter(posweight, t)
+    logw = pmap(test_loglikelihood, tt).logw
+    wt = Weights(select(tt, :weights))
+    return mean(logw, wt)
+end
 
 ########## Writeup Functions
 export see_parameters_NoEF, see_parameters_Joint, see_parameters_Sequential
