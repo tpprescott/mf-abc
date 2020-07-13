@@ -31,9 +31,10 @@ const y_obs_EF = EF_displacements
 const EMF = ConstantEF(1.0)
 const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
 
-export prior_NoEF, prior_Full
+export prior_NoEF, prior_Full, prior_Best
 const prior_NoEF = prior_flat_all[:SCM]
 const prior_Full = prior_flat_all[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
+const prior_Best = prior_flat_all[Symbol(:SCM, :Spe, :Pol, :Pos)]
 
 ######### NoEF
 
@@ -61,9 +62,9 @@ const Σ_EF_BSL_SMC = SMCWrapper(
 
 export Σ_Joint_BSL_IS, Σ_Joint_BSL_SMC
 
-const Σ_Joint_BSL_IS = ISProposal(prior_Full, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
+const Σ_Joint_BSL_IS = ISProposal(prior_Best, (L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF, y_obs_EF))
 const Σ_Joint_BSL_SMC = SMCWrapper(
-    prior_Full,
+    prior_Best,
     Tuple(((L_NoEF_BSL(n), L_EF_BSL(n)), (y_obs_NoEF, y_obs_EF)) for n in 50:50:500)
 )
 
