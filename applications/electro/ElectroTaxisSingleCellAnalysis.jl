@@ -244,7 +244,8 @@ X_labels = Dict(
 )
 
 using StatsPlots
-export see_selection_xIC
+export see_selection_xIC, see_selection_Bayes
+
 function see_selection_xIC(; kwargs...)
     T = load_Combinatorial()
     lbl = [Symbol(sym...) for sym in all_labels]
@@ -253,11 +254,16 @@ function see_selection_xIC(; kwargs...)
 
     AICVec = [sequential_AIC(T, k) for k in lbl]
     AIC_sort = sortperm(AICVec, rev=true)
-    figA = bar(AICVec[AIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[AIC_sort]), title="AIC", legend=:none)
+    figA = bar(AICVec[AIC_sort]; xlim=(600,900), yticks=(1:16, nam[AIC_sort]), legend=:none, 
+    orientation=:h,
+    xlabel="AIC",
+    ylabel="Parameter space X")
 
     BICVec = [sequential_BIC(T, k) for k in lbl]
     BIC_sort = sortperm(BICVec, rev=true)
-    figB = bar(BICVec[BIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[BIC_sort]), title="BIC", legend=:none)
+    figB = bar(BICVec[BIC_sort]; xrotation=45, xlim=(600,900), yticks=(1:16, nam[BIC_sort]), legend=:none, 
+    orientation=:h,
+    xlabel="BIC")
 
     fig = plot(figA, figB; layout = (1,2), kwargs...)
 end
@@ -265,17 +271,32 @@ end
 function see_selection_Bayes(fn::String="./applications/electro/test_loglikelihood.jld"; kwargs...)
     test_loglikelihood = load(fn, "L")
     lbl = [Symbol(sym...) for sym in all_labels]
-    nam = [X_labels[k] for k in lbl]
 #    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
 
-    l_sort = sortperm(test_loglikelihood, rev=true)
-    figA = bar(test_loglikelihood[l_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[l_sort]), title="Uniform prior", legend=:none)
+    nam = [X_labels[k] for k in lbl]    
+    L = [test_loglikelihood[k] for k in lbl]
+    L .-= maximum(L)
+    broadcast!(exp, L, L)
+    L ./= sum(L)
 
-#    BICVec = [sequential_BIC(T, k) for k in lbl]
-#    BIC_sort = sortperm(BICVec, rev=true)
-#    figB = bar(BICVec[BIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[BIC_sort]), title="BIC", legend=:none)
+    L_sort = sortperm(L)
+    figA = bar(L[L_sort]; yticks=(1:16, nam[L_sort]), title="λ=0 (Uniform model prior)", legend=:none, 
+    orientation=:h,
+    xlabel="Posterior mass p_X",
+    ylabel="Parameter space X")
 
-#    fig = plot(figA, figB; layout = (1,2), kwargs...)
+    p2 = [test_loglikelihood[k] - 2*ndims(model_all[k]) for k in lbl]
+    p2 .-= maximum(p2)
+    broadcast!(exp, p2, p2)
+    p2 ./= sum(p2)
+#    broadcast!(log, p2, p2)
+
+    p2_sort = sortperm(p2)
+    figB = bar(p2[p2_sort]; yticks=(1:16, nam[p2_sort]), title="λ=2", legend=:none, 
+    orientation=:h,
+    xlabel="Posterior mass p_X")
+
+    fig = plot(figA, figB; layout = (1,2), kwargs...)
 end
 
 end
