@@ -11,10 +11,10 @@ function update_axes_guides(d::KW, labs, lims, i, j, n)
     # d[:title]  = (i==1 ? _cycle(labs,j) : "")
     # d[:xticks] = (i==n)
     d[:xguide] = (i==n ? StatsPlots._cycle(labs,j) : "")
-    d[:xlims] = StatsPlots._cycle(lims,j)
+    d[:xlims] = (i>j ? :auto : StatsPlots._cycle(lims,j))
     # d[:yticks] = (j==1)
     d[:yguide] = (j==1 ? StatsPlots._cycle(labs,i) : "")
-    d[:ylims] = (i==j ? :auto : StatsPlots._cycle(lims,i))
+    d[:ylims] = (i>=j ? :auto : StatsPlots._cycle(lims,i))
 end
 
 @recipe function f(ps::ParameterWeights)
