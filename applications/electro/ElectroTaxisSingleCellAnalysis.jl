@@ -187,6 +187,13 @@ function test_loglikelihood(t::IndexedTable)
     return log(mean(w, wt)) + F
 end
 
+using JLD
+function test_loglikelihood(fn::String="./applications/electro/test_loglikelihood.jld")
+    T = load_Combinatorial()
+    L = Dict(k=>test_loglikelihood(T[k]) for k in keys(T))
+    save(fn, "L", L)
+end
+
 ########## Writeup Functions
 export see_parameters_NoEF, see_parameters_Joint, see_parameters_Sequential
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
@@ -217,16 +224,58 @@ function see_parameters_SequentialBest(; generation::Int64=10, cols=nothing, kwa
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 
+X_labels = Dict(
+    :SCM => "∅",
+    :SCMPos => "1",
+    :SCMSpe => "2",
+    :SCMAli => "3",
+    :SCMPol => "4",
+    :SCMSpePol => "2, 4",
+    :SCMSpePos => "1, 2",
+    :SCMSpeAli => "2, 3",
+    :SCMPolPos => "1, 4", 
+    :SCMPolAli => "3, 4",
+    :SCMPosAli => "1, 3",
+    :SCMSpePolPos => "1, 2, 4",
+    :SCMSpePolAli => "2, 3, 4",
+    :SCMSpePosAli => "1, 2, 3",
+    :SCMPolPosAli => "1, 3, 4",
+    :SCMSpePolPosAli => "1, 2, 3, 4",
+)
+
 using StatsPlots
-export see_model_selection
-function see_model_selection(; kwargs...)
+export see_selection_xIC
+function see_selection_xIC(; kwargs...)
     T = load_Combinatorial()
     lbl = [Symbol(sym...) for sym in all_labels]
-    nam = repeat(lbl, outer=2)
-    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+    nam = [X_labels[k] for k in lbl]
+#    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+
     AICVec = [sequential_AIC(T, k) for k in lbl]
+    AIC_sort = sortperm(AICVec, rev=true)
+    figA = bar(AICVec[AIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[AIC_sort]), title="AIC", legend=:none)
+
     BICVec = [sequential_BIC(T, k) for k in lbl]
-    fig = groupedbar(nam, hcat(AICVec, BICVec); group=ctg, xrotation=45, ylim=[800,1100], kwargs...)
+    BIC_sort = sortperm(BICVec, rev=true)
+    figB = bar(BICVec[BIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[BIC_sort]), title="BIC", legend=:none)
+
+    fig = plot(figA, figB; layout = (1,2), kwargs...)
+end
+
+function see_selection_Bayes(fn::String="./applications/electro/test_loglikelihood.jld"; kwargs...)
+    test_loglikelihood = load(fn, "L")
+    lbl = [Symbol(sym...) for sym in all_labels]
+    nam = [X_labels[k] for k in lbl]
+#    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+
+    l_sort = sortperm(test_loglikelihood, rev=true)
+    figA = bar(test_loglikelihood[l_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[l_sort]), title="Uniform prior", legend=:none)
+
+#    BICVec = [sequential_BIC(T, k) for k in lbl]
+#    BIC_sort = sortperm(BICVec, rev=true)
+#    figB = bar(BICVec[BIC_sort]; xrotation=45, ylim=(600,900), xticks=(1:16, nam[BIC_sort]), title="BIC", legend=:none)
+
+#    fig = plot(figA, figB; layout = (1,2), kwargs...)
 end
 
 end
