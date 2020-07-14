@@ -75,6 +75,7 @@ using Random, StatsBase
 Random.seed!(1)
 const test_idx_NoEF = sample(1:50, 10, replace=false)
 const test_idx_EF = sample(1:50, 10, replace=false)
+Random.seed!()
 
 # Check every worker has the same set of idx
 println(test_idx_NoEF)
