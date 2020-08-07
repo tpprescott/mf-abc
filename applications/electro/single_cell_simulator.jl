@@ -1,22 +1,18 @@
 using DifferentialEquations
 using LinearAlgebra
-alignment(z1::Complex, z2::Complex) = (dot(z1,z2)+dot(z2,z1))/2
 
-export AbstractEMField, NoEF
+export AbstractEMField
 
 # For every concrete Field<:AbstractEMField we need to be able to call
 # (emf::Field)(t::Float64)::Complex{Float64}
 abstract type AbstractEMField end
 function drift(emf::AbstractEMField)
     f = function (du, u, p, t)
-        drift_NoEF!(du, u, p, t)
-        input = emf(t)
-        if !iszero(input)
-            du[1] *= (1.0 + abs(input)*p[:γ_speed])
-            du[1] += iszero(u[2]) ? 0.0 : p[:γ_alignment]*(alignment(u[2],input)/abs(u[2]))*u[2]
-            du[1] += p[:γ_position] * input
-            du[2] += p[:γ_polarity] * input
-        end
+        du[1] = -∇W(u[1]; p...)
+        du[1] += p[:polarity_bias] * emf(t)
+        du[1] *= p[:σ]^2
+        du[1] /= 2
+        return nothing
     end
     return f
 end 
@@ -25,7 +21,15 @@ export NoEF, ConstantEF, StepEF
 
 struct NoEF <: AbstractEMField end
 const NOFIELD = NoEF()
-drift(::NoEF) = drift_NoEF!
+function drift(emf::NoEF)
+    f = function (du, u, p, t)
+        du[1] = -∇W(u[1]; p...)
+        du[1] *= p[:σ]^2
+        du[1] /= 2
+        return nothing
+    end
+    return f
+end
 (::NoEF)(t) = complex(0.0)
 
 struct ConstantEF <: AbstractEMField
@@ -39,6 +43,42 @@ struct StepEF <: AbstractEMField
     t_step::Float64
 end
 (emf::StepEF)(t) = t<emf.t_step ? emf.x0 : emf.x1
+
+export v_EM, v_cell, velocity
+
+function v_EM(t; 
+    v::Float64, 
+    EMF::AbstractEMField=NOFIELD, 
+    position_bias::Float64=0.0, 
+    kwargs...)
+    
+    return v * position_bias * EMF(t)
+end
+
+alignment(z1::Complex, z2::Complex) = Float64((dot(z1,z2)+dot(z2,z1))/2)
+function v_cell(t, p::Complex{Float64}; 
+    v::Float64, 
+    EMF::AbstractEMField=NOFIELD, 
+    speed_change::Float64=0.0,
+    alignment_bias::Float64=0.0,
+    kwargs...)
+
+    if iszero(p)
+        return complex(0.0)
+    else
+        out = v*p
+        u = EMF(t)
+        if !iszero(u)
+            phat = p/abs(p)
+            out *= (1 + speed_change*abs(u) + alignment_bias*alignment(u, phat)) 
+        end 
+        return out
+    end
+end
+
+function velocity(t, p::Complex{Float64}; kwargs...) 
+    return v_EM(t; kwargs...) + v_cell(t, p; kwargs...)
+end
 
 export SingleCellSimulator
 # abstract type SingleCellSimulator{M, T, F<:EMField} <: AbstractSimulator{M, T} end
@@ -60,22 +100,28 @@ struct SingleCellSimulator{EMF<:AbstractEMField} <: AbstractSimulator
     end
 end
 
-function ∇W(β::Float64, λ::Float64, x::Complex{Float64})::Complex{Float64}
-    return β*(abs2(x)-1)*(abs2(x)-λ+1)*x
+function ∇W(p::Complex{Float64}; β::Float64, λ::Float64, kwargs...)::Complex{Float64}
+    p2 = abs2(p)
+    return β*(p2-1)*(p2-(λ-1))*p
 end
 function drift_NoEF!(du, u, p, t)
-    du[1] = p[:v] * u[2]
-    du[2] = -∇W(p[:β], p[:λ], u[2])
+    du[1] = -∇W(u[1]; p...)
     return nothing
 end
 function noise!(du, u, p, t)
-    du[2] = p[:σ]
+    du[1] = p[:σ]
     return nothing
 end
 
-function _map_barriers_to_coefficients(EB_on::Float64, EB_off::Float64, σ::Float64)::NTuple{2,Float64}
+function W(z::Complex{Float64}; β::Float64, λ::Float64, kwargs...)::Float64
+    r2 = abs2(z)
+    return β*((r2^3)/6 - λ*(r2^2)/4 + (λ-1)*(r2)/2)
+end
+W(x, y; kwargs...) = W(complex(x,y); kwargs...)
+
+function _map_barriers_to_coefficients(EB_on::Float64, EB_off::Float64)::NTuple{2,Float64}
     λ = get_λ(EB_on, EB_off)
-    β = get_β(EB_on, σ, λ)
+    β = get_β(EB_on, λ)
     return β, λ
 end
 function get_λ(EB_on, EB_off)
@@ -96,40 +142,96 @@ function get_λ(EB_on, EB_off)
     end
     return 2 - delta
 end
-function get_β(EB_on, σ, λ)
-    return -6.0 * (σ^2) * EB_on / (((λ-1)^2)*(λ-4))
+function get_β(EB_on, λ)
+    return -12.0 * EB_on / (((λ-1)^2)*(λ-4))
 end
 function initial_conditions(sigma)
-    return [complex(0), sigma*complex(randn(), randn())]
+    return [sigma*complex(randn(), randn())]
 end
 
-const noise_shape = [complex(0.0), complex(1.0)]
 function (F::SingleCellSimulator)(; 
     polarised_speed::Float64, σ::Float64, EB_on::Float64, EB_off::Float64,
     speed_change::Float64=0.0, polarity_bias::Float64=0.0, position_bias::Float64=0.0, alignment_bias::Float64=0.0,
     u0::Array{Complex{Float64},1}=initial_conditions(F.σ_init), W=nothing,
     output_trajectory=false, kwargs...)
 
-    β, λ = _map_barriers_to_coefficients(EB_on, EB_off, σ)
-    p = (
-        v=polarised_speed, 
-        σ=σ, 
+    # Simulate the polarity SDE
+    β, λ = _map_barriers_to_coefficients(EB_on, EB_off)
+    parm_p = (
+        σ=σ,
         β=β, 
         λ=λ, 
-        γ_polarity = 0.5*polarity_bias*σ^2, # Dimensionalise the parameter
-        γ_speed = speed_change, # Keep parameter nondimensional
-        γ_position = position_bias*polarised_speed, # Dimensionalise the parameter
-        γ_alignment = alignment_bias*polarised_speed, # Dimensionalise the parameter
+        polarity_bias=polarity_bias,
     )
     
     independentFlag = W === nothing
     couple = independentFlag ? nothing : NoiseWrapper(W)
-    prob = SDEProblem(drift(F.emf), noise!, u0, F.tspan, p, noise_rate_prototype=noise_shape, noise=couple)
-    sol = solve(prob, saveat=F.saveat, save_idxs=1, save_noise = independentFlag)
+    prob_p = SDEProblem(drift(F.emf), noise!, u0, F.tspan, parm_p, noise=couple)
+    sol_p = solve(prob_p, save_noise = independentFlag)
 
-    summary = get_displacements(sol.u)
-    independentFlag && (W=sol.W)
-    return output_trajectory ? sol : (y=summary, u0=u0, W=W)
+    # Integrate to get position
+    function v!(dx, x, parm, t)
+        dx[1] = velocity(t, sol_p(t); parm...)
+        return nothing
+    end
+    parm_x = (
+        v = polarised_speed,
+        EMF = F.emf,
+        speed_change = speed_change,
+        alignment_bias = alignment_bias,
+        position_bias = position_bias,
+    )
+
+    prob_x = ODEProblem(v!, [0.0], F.tspan, parm_x)
+    if output_trajectory
+        sol_x = solve(prob_x)
+        return sol_p, sol_x
+    else
+        sol_x = solve(prob_x, saveat=F.saveat)
+        summary = get_displacements(sol_x.u)
+        independentFlag && (W=sol_p.W)
+        return (y=summary, u0=u0, W=W)
+    end
 end
 import Base.eltype
 eltype(::Type{T}) where T<:SingleCellSimulator = NamedTuple{(:y, :u0, :W), Tuple{Array{Float64,1}, Array{Complex{Float64}, 1}, NoiseProcess}}
+
+
+function polarity(z::Complex{Float64};
+    polarised_speed::Float64,
+    EMF::AbstractEMField=NOFIELD,
+    speed_change::Float64,
+    alignment_bias::Float64,
+    kwargs...)
+
+    z_EM = v_EM(0; v=polarised_speed, EMF=EMF, kwargs...)
+    z_cell = z - z_EM
+
+    iszero(z_cell) && (return complex(0.0))
+    phat = z_cell/abs(z_cell)
+    u = EMF(0)
+    z_cell /= (1 + speed_change*abs(u) + alignment_bias*alignment(u,phat))
+
+    return z_cell
+
+end
+
+export stationary_velocity
+function stationary_velocity(vel::Complex{Float64};
+    polarised_speed::Float64,
+    EB_on::Float64,
+    EB_off::Float64,
+    EMF::AbstractEMField=NOFIELD,
+    polarity_bias::Float64=0.0,
+    speed_change::Float64=0.0,
+    alignment_bias::Float64=0.0,
+    kwargs...
+    )
+
+    p = polarity(vel; 
+    polarised_speed=polarised_speed, EMF=EMF, speed_change=speed_change, alignment_bias=alignment_bias, kwargs...)
+
+    β, λ = _map_barriers_to_coefficients(EB_on, EB_off)
+    ϕ::Float64 = exp(-W(p; β=β, λ=λ) + polarity_bias*alignment(p,EMF(0)))
+    return ϕ
+end

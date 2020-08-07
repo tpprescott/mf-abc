@@ -6,6 +6,7 @@ using Distributions, LinearAlgebra, IndexedTables, Combinatorics, InvertedIndice
 import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
+
 const prior_support = [(0.001, 3.0) (0.0, 5.0) (0.0, 5.0) (0.001, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0,2.0)]
 const prior_flat_components = Dict(
     :SCM => DistributionGenerator(SingleCellModel, product_distribution(vec([Uniform(interval...) for interval in prior_support[1:4]]))),
@@ -299,6 +300,324 @@ function see_selection_Bayes(fn::String="./applications/electro/test_loglikeliho
     xlabel="Posterior mass p_X")
 
     fig = plot(figA, figB; layout = (1,2), kwargs...)
+end
+
+
+################################ Compare to data
+using StatsBase
+
+export θbar, θgen, visualise
+export compare_data_NoEF, compare_data_EF
+
+function θbar(T)
+    F(θ) = [values(θ)...]
+    F_θ = F.(select(T, :θ))
+    w = select(T, :weight)
+    Θ = eltype(select(T, :θ))
+    return Θ(sum(F_θ.*w)./sum(w))
+end
+function θgen(T)
+    θ = select(T, :θ)
+    w = Weights(select(T, :weight))
+    return sample(θ, w)
+end
+θgen(θ::NamedTuple) = θ
+
+function visualise(F, T, N) 
+    fig = plot()
+    for n in 1:N
+        θ = θgen(T)
+        sol_n = F(; θ..., output_trajectory=true)
+        plot!(fig, broadcast(t->sol_n(t)[1], F.saveat))
+    end
+    plot!(fig; legend=:none, ratio=:equal, framestyle=:origin, xlabel="x", ylabel="y")
+    return fig
+end
+function visualise(y_obs)
+    fig = plot()
+    for traj in y_obs
+        plot!(fig, traj)
+    end
+    plot!(fig; legend=:none, ratio=:equal, framestyle=:origin, xlabel="x", ylabel="y")
+    return fig
+end
+
+function compare_data_NoEF()
+    Θ = merge(SingleCellModel)
+    T = load_sample("./applications/electro/NoEF_BSL_SMC.jld", Θ)[end]
+    θ = θbar(T)
+    data_NoEF = visualise(NoEF_trajectories)
+    common_NoEF = visualise(F_NoEF, θ, 50)
+    dist_NoEF = visualise(F_NoEF, T, 50)
+    plot(
+        data_NoEF, 
+        common_NoEF, 
+        dist_NoEF, 
+        layout=(1,3), 
+        link=:all,
+        size=(900,300),
+    )
+end
+
+
+function compare_data_EF()
+    Θ = merge(SingleCellModel, SpeedChange, PolarityBias, PositionBias)
+    T = load_sample("./applications/electro/Joint_BSL_SMC.jld", Θ)[end]
+    θ = θbar(T)
+    data_NoEF = visualise(NoEF_trajectories)
+    data_EF = visualise(EF_trajectories)
+    common_NoEF = visualise(F_NoEF, θ, 50)
+    common_EF = visualise(F_EF, θ, 50)
+    dist_NoEF = visualise(F_NoEF, T, 50)
+    dist_EF = visualise(F_EF, T, 50)
+
+    fig_NoEF = plot(data_NoEF, common_NoEF, dist_NoEF, layout=(1,3), link=:all)
+    fig_EF = plot(data_EF, common_EF, dist_EF, layout=(1,3), link=:all)
+    fig = plot(
+        fig_NoEF, 
+        fig_EF, 
+        layout=(2,1), 
+        size=(900,600),
+    )
+end
+
+################################ Analyse switch
+using StatsPlots, Statistics
+const EMF_switch = StepEF(complex(1), complex(-1), 90)
+const EMF_stop = StepEF(complex(1), complex(0), 90)
+
+export F_switch, F_stop, step_figs
+const F_switch = SingleCellSimulator(σ_init=0.1, emf=EMF_switch)
+const F_stop = SingleCellSimulator(σ_init=0.1, emf=EMF_stop)
+
+function step_figs(F, T, N::Int64=5; kwargs...)
+    
+    fig_traj_1 = plot(legend=:none, link=:both, title="Displacement: 0 < t < 90min")
+    fig_traj_2 = plot(legend=:none, link=:both, title="Displacement: 90 < t < 180min")
+    fig_polarity_magnitude = plot(legend=:none, xticks=[0, 90, 180], title="Polarity: Magnitude", ylabel="abs(p)")
+    fig_polarity_angle = plot(xticks=[0, 90, 180], title="Polarity: Aligned Component", ylabel="cos(arg(p))")
+    fig_polarity_sinangle = plot(xticks=[0, 90, 180], title="Polarity: Perpendicular Component", xlabel="t", ylabel="abs(sin(arg(p)))")
+
+    sol = [F(; θgen(T)..., output_trajectory=true) for n in 1:(100*N)]
+    
+    for n in 1:N
+        fun_traj(t) = sol[n](t)[1]
+        fun_polarity_magnitude(t) = abs(sol[n](t)[2])
+        fun_polarity_angle(t) = fun_polarity_magnitude(t)<0.6 ? NaN : cos(angle(sol[n](t)[2])) 
+        fun_polarity_sinangle(t) = fun_polarity_magnitude(t)<0.6 ? NaN : abs(sin(angle(sol[n](t)[2]))) 
+
+        plot!(fig_traj_1, fun_traj.(0:0.1:90), ratio=:equal, alpha=0.5, label="")
+        plot!(fig_traj_2, fun_traj.(90:0.1:180).-fun_traj(90), ratio=:equal, alpha=0.5, label="")
+        plot!(fig_polarity_magnitude, 0:1:180, fun_polarity_magnitude, alpha=0.5, label="")
+        plot!(fig_polarity_angle, 0:1:180, fun_polarity_angle, alpha=0.5, label="")
+        plot!(fig_polarity_sinangle, 0:1:180, fun_polarity_sinangle, alpha=0.5, label="")
+    end
+
+    plot!(fig_polarity_magnitude, 0:1:180, t->abs(F.emf(t)), seriescolor=:black, label="EF Input")
+    plot!(fig_polarity_angle, 0:1:180, t->iszero(F.emf(t)) ? 0.0 : cos(angle(F.emf(t))), seriescolor=:black, label="EF Input")
+    plot!(fig_polarity_sinangle, 0:1:180, t->iszero(F.emf(t)) ? 0.0 : abs(sin(angle(F.emf(t)))), seriescolor=:black, label="EF Input")
+
+    mean_traj(t) = mean([sol_n(t)[1] for sol_n in sol])
+    mean_polarity_magnitude(t) = mean([abs(sol_n(t)[2]) for sol_n in sol])
+    mean_polarity_angle(t) = mean([cos(angle(sol_n(t)[2])) for sol_n in sol if abs(sol_n(t)[2])>0.6])
+    mean_polarity_sinangle(t) = mean([abs(sin(angle(sol_n(t)[2]))) for sol_n in sol if abs(sol_n(t)[2])>0.6])
+
+    plot!(fig_traj_1, mean_traj.(0:0.1:90), ratio=:equal, seriescolor=:red, label="Ensemble average")
+    plot!(fig_traj_2, mean_traj.(90:0.1:180).-mean_traj(90), ratio=:equal, seriescolor=:red, label="Ensemble average")
+    plot!(fig_polarity_magnitude, 0:1:180, mean_polarity_magnitude, seriescolor=:red, label="Ensemble average")
+    plot!(fig_polarity_angle, 0:1:180, mean_polarity_angle, seriescolor=:red, label="Ensemble average", legend=:none)
+    plot!(fig_polarity_sinangle, 0:1:180, mean_polarity_sinangle, seriescolor=:red, label="Ensemble average", legend=:left)
+
+#    endpoints_1 = [sol_n(90)[1] for sol_n in sol]
+#    endpoints_2 = [sol_n(180)[1]-sol_n(90)[1] for sol_n in sol]
+
+#    plot!(fig_traj_1, real.(endpoints_1), imag.(endpoints_1), 
+#        seriestype=:scatter, markershape=:xcross, markeralpha=0.3, markersize=1, markercolor=:red, label="")
+#    plot!(fig_traj_2, real.(endpoints_2), imag.(endpoints_2), 
+#        seriestype=:scatter, markershape=:xcross, markeralpha=0.3, markersize=1, markercolor=:red, label="")
+
+    fig_traj = plot(fig_traj_1, fig_traj_2, layout = (1,2), link=:all, ratio=:equal, xlabel="x", ylabel="y")
+    return plot(fig_traj, fig_polarity_magnitude, fig_polarity_angle, fig_polarity_sinangle;
+    layout=(4,1), size=(800, 600), kwargs...)
+end
+
+export coarse
+using SparseArrays
+function coarse(z::Complex)
+    if abs(z)<0.6
+        return 1
+    else
+        re = real(z)
+        im = imag(z)
+        if abs(re)<abs(im)
+            return 3
+        else
+            return re>0 ? 2 : 4
+        end
+    end
+end
+function coarse(z1::Complex, z2::Complex)
+    mat = zeros(Int64, 4, 4)
+    coarse!(mat, z1, z2)
+    return mat
+end
+function coarse(sol, t::Real)
+    vec = zeros(Int64, 4)
+    coarse!(vec, sol, t)
+    return vec
+end
+function coarse(sol, t1::Real, t2::Real)
+    mat = zeros(Int64, 4, 4)
+    coarse!(mat, sol, t1, t2)
+    return mat
+end
+
+function coarse!(mat, z1::Complex, z2::Complex)
+    i = coarse(z1)
+    j = coarse(z2)
+    mat[i, j] += 1
+    return nothing
+end
+function coarse!(vec, sol, t::Real)
+    for sol_n in sol
+        i = coarse(sol_n(t)[2])
+        vec[i] += 1
+    end
+    return nothing
+end
+function coarse!(mat, sol, t1::Real, t2::Real)
+    for sol_n in sol
+        coarse!(mat, sol_n(t1)[2], sol_n(t2)[2])
+    end
+    return nothing
+end
+
+export coarse_step_figs
+function coarse_step_figs(F, T, N::Int64=1000; dt::Float64=5.0, kwargs...)
+
+    state_lbl = ["Depolarised", "Polarised positive", "Polarised perpendicular", "Polarised negative"]
+    state_clr = [1, 3, 4, 2]
+
+    sol = [F(; θgen(T)..., output_trajectory=true) for n in 1:N]
+    fig_states = plot(; title="State")
+    fig_to4 = plot(; title="Net flux to ($(state_lbl[4]))")
+    fig_from2 = plot(; title="Net flux from ($(state_lbl[2]))")
+    fig_from1 = plot(; title="Net flux from ($(state_lbl[1]))")
+
+    function f(i::Int64, j::Int64, t::Float64) 
+        mat = coarse(sol, t-dt, t)
+        return mat[i, j]-mat[j,i]
+    end
+    function f(i::Int64, t::Float64)
+        vec = coarse(sol, t)
+        return vec[i]
+    end
+
+    tvec = 70:dt:180
+
+    for i in 1:3
+        plot!(fig_to4, tvec, t->f(i, 4, t), label="from $(state_lbl[i])", seriescolor=state_clr[i])
+    end
+    for j in [1,3,4]
+        plot!(fig_from2, tvec, t->f(2, j, t), label="to $(state_lbl[j])", seriescolor=state_clr[j])
+    end
+    for j in 2:4
+        plot!(fig_from1, tvec, t->f(1, j, t), label="to $(state_lbl[j])", seriescolor=state_clr[j])
+    end
+    for k in 1:4
+        plot!(fig_states, 0.0:1.0:180, t->f(k, t), label="$(state_lbl[k])", seriescolor=state_clr[k])
+    end
+
+    fig = plot(
+        fig_states, 
+        coarse_state(),
+        fig_from2, 
+        #fig_from1, 
+        fig_to4;
+     layout=(2,2), xticks=0:30:180, size=(800,800), legendfontsize=6, titlefontsize=8, kwargs...)
+    return fig
+end
+
+export coarse_state
+function coarse_state()
+    P2 = StatsPlots.Plots.P2
+    X1 = StatsPlots.Plots.partialcircle(0, 2π, 100, 0.6);
+    X2 = P2[(0,0), (5,5), (5,-5)]
+    X3a = P2[(0,0), (5,5), (-5,5)]
+    X3b = P2[(0,0), (-5,-5), (5,-5)]
+    X4 = P2[(0,0), (-5, 5), (-5, -5)]
+    
+    fig = plot(; ratio=:equal, xlims=(-1.2, 1.2), ylims=(-1.2, 1.2), xlabel="x", ylabel="y", title="Coarse-grained Polarity")
+
+    plot!(fig, Shape(X2), fillcolor=3, label="Polarised positive")
+    plot!(fig, Shape(X3a), fillcolor=4, label="")
+    plot!(fig, Shape(X3b), fillcolor=4, label="Polarised perpendicular")
+    plot!(fig, Shape(X4), fillcolor=2, label="Polarised negative")
+    plot!(fig, Shape(X1), fillcolor=1, label="Depolarised")
+    plot!(fig, sin, cos, 0, 2π, color=:black, label="", linestyle=:dash)
+
+    return fig
+end
+
+export see_stationary_velocity
+function see_stationary_velocity(; kwargs...)
+    fig = plot()
+    
+    heatmap!(fig, -4:0.05:4, -4:0.05:4, (x,y)->stationary_velocity(complex(x,y); kwargs...);
+        ratio=:equal,
+        c=:Blues_9,
+        xlims = (-4,4),
+        ylims = (-4,4),
+        grid=:false,
+        colorbar=:false,
+        tick_direction=:out,
+        framestyle=:box,
+        kwargs...
+        )
+    return fig
+end
+
+export compare_stationary_velocity
+function compare_stationary_velocity()
+
+    pars = (polarised_speed = 1.0, EB_on = 1.5, EB_off=1.0, σ=0.25,
+    position_bias = 0.5,
+    speed_change = 1.0,
+    alignment_bias = 1.0,
+    polarity_bias = 0.5,
+    )
+
+    EMF_off = NoEF()
+    EMF_on = ConstantEF(complex(1.0))
+
+    fig_off = see_stationary_velocity(; pars..., EMF=EMF_off)
+    fig_on = see_stationary_velocity(; pars..., EMF=EMF_on)
+
+    v = pars.polarised_speed
+    γ1 = pars.position_bias
+    γ2 = pars.speed_change
+    γ3 = pars.alignment_bias
+    γ4 = pars.polarity_bias
+
+    plot!(fig_off; title="Autonomous model", 
+    xticks = ([0, 1].*v, ["0","v"]),
+    yticks = ([0, 1].*v, ["0","v"]),
+    )
+    plot!(fig_on; title="Electrotactic model",
+    xticks = (([-(1+γ2-γ3), 0, (1+γ2+γ3)].*v) .+ (γ1*v), ["γ1 v - (1+γ2-γ3)v", "γ1 v","γ1 v + (1+γ2+γ3)v"]),
+    yticks = ([0, 1].*v*(1+γ2), ["0","(1+γ2) v"]),
+    )
+
+    line_opt = (label="", c=:black,)
+    hline!(fig_on, [0.0]; line_opt...)
+    vline!(fig_on, [0.0]; line_opt...)
+    hline!(fig_off, [0.0]; line_opt...)
+    vline!(fig_off, [0.0]; line_opt...)
+
+    plot!(fig_on, xrotation=45)
+    fig = plot(fig_off, fig_on, layout=(1,2), legend=:none, tickfontsize=6, tickfonthalign=:right)
+    return fig
+
 end
 
 end
