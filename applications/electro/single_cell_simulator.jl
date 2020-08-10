@@ -61,64 +61,35 @@ noise(u, p, t) = p.σ
 export v_EM, v_cell, velocity
 
 function v_EM(EMF::AbstractEMField)
-    f = function (pos, p, t)
-        return p.v * p.γ1 * EMF(t)
+    f = function (pos, par, t)
+        return par.v * par.γ1 * EMF(t)
     end
     return f
 end
 
 alignment(z1::Complex, z2::Complex) = Float64((dot(z1,z2)+dot(z2,z1))/2)
 function v_cell(EMF::AbstractEMField)
-    f = function (pos, p, t)
+    f = function (pos, (pol, par), t)
         u = EMF(t)
-        g = function (pol::Complex{Float64})
-            if iszero(pol)
-                out = pol
-            else
-                out = p.v * pol
-                if !iszero(u)
-                    polhat = pol/abs(pol)
-                    out *= (1 + p.γ2*abs(u) + p.γ3*alignment(u, polhat))
-                end
+        pol_t = pol(t)
+        if iszero(pol_t)
+            out = pol_t
+        else
+            out = par.v * pol_t
+            if !iszero(u)
+                polhat = pol_t/abs(pol_t)
+                out *= (1 + par.γ2*abs(u) + par.γ3*alignment(u, polhat))
             end
-            return out
         end
-        return g
+        return out
     end
     return f
 end
 function v_cell(EMF::AbstractEMField, pol::Complex{Float64})
-    if iszero(pol)
-        f = function (pos, p, t)
-            return zero(Complex{Float64})
-        end
-    else
-        f = function (pos, p, t)
-            u = EMF(t)
-            out = p.v * pol
-            if !iszero(u)
-                polhat = pol/abs(pol)
-                out *= (1 + p.γ2*abs(u) + p.γ3*alignment(u, polhat)) 
-            end 
-            return out
-        end
-    end
-    return f
-end
-function v_cell(EMF::AbstractEMField, pol::RODESolution)
-    f = function (pos, p, t)
-        pol_t = pol(t)
-        if iszero(pol_t)
-            out = zero(Complex{Float64})
-        else
-            u = EMF(t)
-            out = p.v * pol_t
-            if !iszero(u)
-                polhat = pol_t/abs(pol_t)
-                out *= (1 + p.γ2*abs(u) + p.γ3*alignment(u, polhat)) 
-            end
-        end
-        return out
+    ff = v_cell(EMF)
+    pol_fun = (t -> pol)
+    f = function (pos, par, t)
+        return ff(pos, (pol_fun, par), t)
     end
     return f
 end
@@ -126,25 +97,18 @@ end
 function velocity(EMF::AbstractEMField)
     _v_EM = v_EM(EMF)
     _v_cell = v_cell(EMF)
-    f = function (pos, p, t)
-        offset_EM = _v_EM(pos, p, t)
-        fun_cell = _v_cell(pos, p, t)
-        g(pol::Complex{Float64}) = fun_cell(pol) + offset_EM
-        return g
+    f = function (pos, (pol, par), t)
+        component_EM = _v_EM(pos, par, t)
+        component_cell = _v_cell(pos, (pol, par), t)
+        return component_EM + component_cell
     end
-    return f
-end
-function velocity(EMF::AbstractEMField, pol)
-    _v_EM = v_EM(EMF)
-    _v_cell = v_cell(EMF, pol)
-    f(pos, p, t) = _v_EM(pos, p, t) + _v_cell(pos, p, t)
     return f
 end
 
 function polarity(EMF::AbstractEMField)
     _v_EM = v_EM(EMF)
-    f = function (pos, p, t)
-        offset_EM = _v_EM(pos, p, t)
+    f = function (pos, par, t)
+        offset_EM = _v_EM(pos, par, t)
         u = EMF(t)
         g = function (vel::Complex{Float64})
                 out = vel - offset_EM
@@ -152,9 +116,9 @@ function polarity(EMF::AbstractEMField)
                     return out
                 elseif !iszero(u)
                     polhat = out/abs(out)
-                    out /= (1 + p.γ2*abs(u) + p.γ3*alignment(u, polhat))
+                    out /= (1 + par.γ2*abs(u) + par.γ3*alignment(u, polhat))
                 end
-                out /= p.v
+                out /= par.v
                 return out
             end
         return g
@@ -212,11 +176,49 @@ function initial_conditions(sigma)::Complex{Float64}
     return sigma*complex(randn(), randn())
 end
 
-function (F::SingleCellSimulator)(; 
+
+#############################################################################
+# SIMULATOR
+#############################################################################
+function couple_noise(ind_flags, u0, W; ic_sigma=0.1)
+    fun = function(prob, i, repeat)
+        if ind_flags[i]
+            remake(prob, u0=initial_conditions(ic_sigma))
+        else
+            remake(prob, u0=u0[i], noise= NoiseWrapper(W[i]))
+        end
+    end
+    return fun
+end
+function prob_fun_x(sol_p)
+    fun = function(prob, i, repeat)
+        remake(prob, p=(sol_p[i], prob.p[2]))
+    end
+    return fun
+end
+
+function output_fun_x(tvec, W_previous, ind_flags, output_trajectory)
+    if output_trajectory
+        fun = ((sol, i) -> (sol, false))
+    else
+        fun = function (sol, i)
+            summary = get_displacements(sol.(tvec))
+            W = ind_flags[i] ? sol.prob.p[1].W : W_previous[i]
+            u0 = sol.prob.p[1].prob.u0
+            return (y = summary, u0=u0, W=W), false
+        end
+    end
+    return fun
+end
+
+const B_t = WienerProcess(0.0, complex(0.0))
+
+function (F::SingleCellSimulator)(n::Int64 = 1;
     v::Float64, EB_on::Float64, EB_off::Float64, D::Float64,
     γ1::Float64=0.0, γ2::Float64=0.0, γ3::Float64=0.0, γ4::Float64=0.0, 
-    u0::Complex{Float64}=initial_conditions(F.σ_init), 
-    W=nothing,
+        ind_flags::Array{Bool, 1} = fill(true, n), 
+        u0 = fill(complex(0.0), n), 
+        W = fill(B_t, n),
     output_trajectory=false, 
     kwargs...)
 
@@ -230,10 +232,19 @@ function (F::SingleCellSimulator)(;
         γ4=γ4,
     )
     
-    independentFlag = (W === nothing)
-    couple = independentFlag ? nothing : NoiseWrapper(W)
-    prob_p = SDEProblem(drift(F.emf), noise, u0, F.tspan, parm_p, noise=couple)
-    sol_p = solve(prob_p, save_noise = independentFlag)
+    prob_p_nominal = SDEProblem(
+        drift(F.emf), 
+        noise, 
+        complex(0.0), 
+        F.tspan, 
+        parm_p,
+    )
+    prob_p = EnsembleProblem(
+        prob_p_nominal, 
+        prob_func = couple_noise(ind_flags, u0, W),
+    )
+
+    sol_p = solve(prob_p, trajectories=n, save_noise=true)
 
     # Integrate to get position
     parm_x = (
@@ -243,17 +254,20 @@ function (F::SingleCellSimulator)(;
         γ3=γ3,
     )
 
-    _velocity = velocity(F.emf, sol_p)
-    prob_x = ODEProblem(_velocity, complex(0.0), F.tspan, parm_x)
-    if output_trajectory
-        sol_x = solve(prob_x)
-        return sol_p, sol_x
-    else
-        sol_x = solve(prob_x, saveat=F.saveat)
-        summary = get_displacements(sol_x.u)
-        independentFlag && (W=sol_p.W)
-        return (y=summary, u0=u0, W=W)
-    end
+    prob_x_nominal = ODEProblem(
+        velocity(F.emf),
+        complex(0.0), 
+        F.tspan, 
+        (t->complex(0.0), parm_x),
+    )
+
+    prob_x = EnsembleProblem(prob_x_nominal,
+        prob_func = prob_fun_x(sol_p),
+        output_func = output_fun_x(F.saveat, W, ind_flags, output_trajectory),
+    )
+
+    sol = solve(prob_x, saveat=F.saveat, trajectories=n)
+    return sol.u
 end
 
 import Base.eltype
