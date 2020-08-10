@@ -141,14 +141,16 @@ function velocity(EMF::AbstractEMField, pol)
     return f
 end
 
-function polarity(emf::AbstractEMField)
-    _v_EM = v_EM(emf)
+function polarity(EMF::AbstractEMField)
+    _v_EM = v_EM(EMF)
     f = function (pos, p, t)
         offset_EM = _v_EM(pos, p, t)
         u = EMF(t)
         g = function (vel::Complex{Float64})
                 out = vel - offset_EM
-                if !iszero(u)
+                if iszero(out)
+                    return out
+                elseif !iszero(u)
                     polhat = out/abs(out)
                     out /= (1 + p.γ2*abs(u) + p.γ3*alignment(u, polhat))
                 end
