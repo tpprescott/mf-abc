@@ -129,14 +129,14 @@ export simulate
 
 # Fallback: implement (f::F)(; parameters..., noise..., other_kwargs...) where F<:AbstractSimulator
 # Need to record the output as eltype(F) where F<:AbstractSimulator
-function simulate(f::F, θ::AbstractModel; numReplicates::Int64, kwargs...)::Array{eltype(F),1} where F<:AbstractSimulator
-    I_F = Iterators.repeated(f)
-    I_θ = Iterators.repeated(θ)
-    I_kw = Iterators.repeated(kwargs)
-    I = Iterators.take(zip(I_F, I_θ, I_kw), numReplicates)
+function simulate(
+    f::F, 
+    θ::AbstractModel; 
+    numReplicates::Int64, 
+    kwargs...,
+)::Array{eltype(F),1} where F<:AbstractSimulator
 
-    # println(θ)
-    R = map(_simulate, I)
+    R = f(numReplicates; θ..., kwargs...)
     return R
 end
 
@@ -148,7 +148,7 @@ function simulate(
     numReplicates::Int64,
     numIndependent::Int64=numReplicates,
     kwargs...
-) where F<:AbstractSimulator where T<:NamedTuple
+)::Array{eltype(F),1} where F<:AbstractSimulator where T<:NamedTuple
     
     K = length(y0)
     numReplicates = max(numReplicates, numIndependent)
@@ -157,29 +157,17 @@ function simulate(
 
     iszero(numCoupled) && (return simulate(f, θ; numReplicates=numReplicates, kwargs...))
     
-    I_F = Iterators.repeated(f)
-    I_θ = Iterators.repeated(θ)
-    I_kw = Iterators.repeated(kwargs)
-
-    I_independent = Iterators.take(zip(I_F, I_θ, I_kw), numIndependent)
     shuffle!(y0)
-    I_coupled = Iterators.take(zip(I_F, I_θ, I_kw, y0), numCoupled)
-
-    R = Array{eltype(F), 1}(undef, numReplicates)
-    # println(θ)
-    R[1:numIndependent] = map(_simulate, I_independent)
-    R[numIndependent+1:end] = map(_simulate, I_coupled)
     
+
+    ind_flags_1 = fill(false, numCoupled)
+    ind_flags_2 = fill(true, numIndependent)
+    ind_flags = vcat(ind_flags_1, ind_flags_2)
+
+    R = f(numReplicates; columns(Columns(y0))..., θ..., ind_flags=ind_flags, kwargs...)
     return R
 end
 simulate(f::F, θ::AbstractModel, L0::LikelihoodFreeLikelihoodFunction{F}; kwargs...) where F = simulate(f, θ, get_simulations(L0); kwargs...)
-
-function _simulate((f, θ, kwargs)::Tuple{F, AbstractModel, Any})::eltype(F) where F<:AbstractSimulator
-    return f(; θ..., kwargs...)
-end
-function _simulate((f, θ, kwargs, y)::Tuple{F, AbstractModel, Any, NamedTuple})::eltype(F) where F<:AbstractSimulator
-    return f(; θ..., y..., kwargs...)
-end
 
 include("abc.jl")
 include("synthetic_bayes.jl")
