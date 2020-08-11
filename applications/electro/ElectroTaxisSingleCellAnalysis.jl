@@ -102,7 +102,7 @@ end
 prior_sequential_components() = Dict(
     :base => posterior_NoEF(),
     :g1 => DistributionGenerator(VelocityBias, Uniform(prior_support[5]...)),
-    :g2 => DistributionGenerator(SpeedChange, Uniform(prior_support[6]...)),
+    :g2 => DistributionGenerator(SpeedIncrease, Uniform(prior_support[6]...)),
     :g3 => DistributionGenerator(SpeedAlignment, Uniform(prior_support[7]...)),
     :g4 => DistributionGenerator(PolarityBias, Uniform(prior_support[8]...)),
 )
