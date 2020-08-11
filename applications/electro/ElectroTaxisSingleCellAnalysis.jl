@@ -2,7 +2,7 @@ module ElectroTaxisSingleCellAnalysis
 
 using ..ElectroTaxis
 using ..LikelihoodFree
-using Distributions, LinearAlgebra, IndexedTables, Combinatorics, InvertedIndices
+using Distributions, LinearAlgebra, IndexedTables, Combinatorics, InvertedIndices, JLD
 import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
@@ -82,18 +82,20 @@ Random.seed!()
 println(test_idx_NoEF)
 
 
+# Common sample from the posterior in Θ_NoEF (using previous output as an importance distribution, for efficiency)
 function construct_posterior_NoEF(; test_idx = test_idx_NoEF)
-    t1 = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
+    t1 = load_sample("./applications/electro/NoEF_SMC.jld", SingleCellModel)
     q1 = SequentialImportanceDistribution(t1[end], prior_NoEF) # Note this forces the support of the posterior equal to that of prior_NoEF
     Σ = ISProposal(prior_NoEF, q1, L_NoEF_BSL(500), getindex(y_obs_NoEF, InvertedIndices.Not(test_idx)))
     t = importance_sample(Σ, 10000)
-    save_sample("./applications/electro/Sequential_NoEF.jld", [t])
+    save_sample("./applications/electro/Seq_NoEF.jld", [t])
     return nothing
 end
 
+# Make an intermediate prior, using the posterior based on the NoEF experiment
 export posterior_NoEF
 function posterior_NoEF()
-    t = load_sample("./applications/electro/Sequential_NoEF.jld", SingleCellModel)
+    t = load_sample("./applications/electro/Seq_NoEF.jld", SingleCellModel)
     q = SequentialImportanceDistribution(t[end], prior_NoEF)
     return q
 end
@@ -124,83 +126,112 @@ function Σ_Sequential_BSL_SMC(prior = prior_sequential_full())
 end
 
 # Deal with all possible mechanisms
-export infer_all_models
-function infer_all_models(; test_idx=test_idx_EF)
+export train_all_models
+function train_all_models(; test_idx=test_idx_EF)
     N = Tuple(1000:1000:10000)
     σ = Tuple(2.0 .^ (-9:1:0))
 
     for (id, prior) in prior_sequential_all()
         Σ = Σ_Sequential_BSL_SMC(prior)
         t = smc_sample(Σ, N, scale = σ, test_idx = (test_idx,))
-        fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
+        fn = "./applications/electro/Seq_train_"*String(id)*".jld"
         save_sample(fn, t)
     end
     return nothing
 end
 
-export load_Combinatorial
-function load_Combinatorial()
-    return Dict(id => load_Combinatorial(id, Θ) for (id, Θ) in model_all)
+const tester = ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF[test_idx_NoEF], y_obs_EF[test_idx_EF]))
+test_loglikelihood(row) = loglikelihood(tester, row.θ).logw
+
+export posweight
+posweight = row -> row.weight>0
+
+export test_all_models
+function test_all_models()
+    T_train = load_Combinatorial_trained()
+    for (id, t) in T
+        L = pmap(test_loglikelihood, t)
+        fn = "./applications/electro/Seq_test_"*String(id)*".jld"
+        save(fn, "L", L)
+    end
 end
-function load_Combinatorial(id::Symbol, ::Type{Θ}) where Θ
-    fn = "./applications/electro/EF_Combinatorial_"*String(id)*".jld"
+
+export load_Combinatorial_trained, load_Combinatorial_tested
+function load_Combinatorial_trained()
+    return Dict(id => load_Combinatorial_trained(id, Θ) for (id, Θ) in model_all)
+end
+function load_Combinatorial_trained(id::Symbol, ::Type{Θ}) where Θ
+    fn = "./applications/electro/Seq_train_"*String(id)*".jld"
     t = load_sample(fn, Θ)
     return t[end]
 end
-
-export sequential_AIC, sequential_BIC
-# The following functions are specific to the sequential inference task, since logp is the previous experiment's posterior (using a flat prior)
-function sequential_AIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
-    d, logLhat = sequential_xIC(T, k)
-    return AIC(d, logLhat)
+function load_Combinatorial_tested()
+    return Dict(id => load_Combinatorial_tested(id, Θ) for (id, Θ) in model_all)
 end
-function sequential_BIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
-    d, logLhat = sequential_xIC(T, k)
-    return BIC(d, 100, logLhat)
-end
-function sequential_xIC(T::Dict{Symbol, IndexedTable}, k::Symbol)
-    Θ = model_all[k]
-    d = ndims(Θ)
-
-    t = T[k]
-    flat_prior = prior_flat_all[k]
-
-    approx_NoEF_loglikelihood = select(t, :logp) - logpdf.(Ref(flat_prior), select(t, :θ))
-    logLhat = maximum(sum.(select(t, :logww)) .+ approx_NoEF_loglikelihood)
+function load_Combinatorial_tested(id::Symbol, ::Type{Θ}) where Θ
+    fn_1 = "./applications/electro/Seq_train_"*String(id)*".jld"
+    fn_2 = "./applications/electro/Seq_test_"*String(id)*".jld"
     
-    return d, logLhat
-end
-AIC(d, logLhat) = 2*d - 2*logLhat
-BIC(d, n, logLhat) = d*log(n) - 2*logLhat
-
-const test_conditioner = ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF[test_idx_NoEF], y_obs_EF[test_idx_EF]))
-
-using Distributed, StatsBase, ProgressMeter
-export posweight, test_loglikelihood
-
-posweight = row -> row.weight>0
-test_loglikelihood(row) = loglikelihood(test_conditioner, row.θ).logw
-function test_loglikelihood(t::IndexedTable)
-    tt = filter(posweight, t)
-    logw = @showprogress pmap(test_loglikelihood, tt)
-    wt = Weights(select(tt, :weight))
-
-    F = maximum(logw)
-    w = exp.(logw .- F)
-    return log(mean(w, wt)) + F
+    t = load_sample(fn_1, Θ)
+    L = load(fn_2, "L")
+    out = pushcol(t[end], :loglh_test, L)
+    return out
 end
 
-using JLD
-function test_loglikelihood(fn::String="./applications/electro/test_loglikelihood.jld")
-    T = load_Combinatorial()
-    L = Dict(k=>test_loglikelihood(T[k]) for k in keys(T))
-    save(fn, "L", L)
+
+######### MODEL SELECTION
+
+function selection_objective(lh_fun, dim_fun, dim_weight)
+    J = function (t::IndexedTable, prior)
+        L = lh_fun(t, prior)
+        D = dim_fun(t)
+        return L - dim_weight*D
+    end
+    return J
 end
+
+function maxloglh(t, prior)
+    L = sum.(select(t, :logww))
+    L .+= select(t, :logp)
+    L .-= logpdf.(Ref(prior), select(t,:θ))
+    return maximum(L)
+end
+
+function loglh_test(t, prior)    
+    L = sum.(select(t, :loglh_test))
+    Lhat = maximum(L)
+
+    p = exp.(L .- Lhat)
+    w = Weights(select(t, :weight))
+    return log(mean(p, w)) + Lhat
+end
+
+function L0(t)
+    Θ = eltype(select(t, :θ))
+    return ndims(Θ)
+end
+
+export J_AIC, J_BIC, J_μ, J_0, J_2, model_selection
+
+const J_AIC = selection_objective(maxloglh, L0, 1)
+const J_BIC = selection_objective(maxloglh, L0, log(100)/2)
+
+J_μ(μ) = selection_objective(loglh_test, L0, μ)
+const J_0 = J_μ(0)
+const J_2 = J_μ(2)
+
+function model_selection(objective_func)
+    T = load_Combinatorial_tested()
+    J = Dict(id => objective_func(t, prior_flat_all[id]) for (id, t) in T)
+    return J
+end
+
+
 
 ########## Writeup Functions
-export see_parameters_NoEF, see_parameters_Joint, see_parameters_Sequential
+export see_parameters_NoEF, see_parameters_Joint
 function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
-    t = load_sample("./applications/electro/NoEF_BSL_SMC.jld", SingleCellModel)
+    t = load_sample("./applications/electro/NoEF_SMC.jld", SingleCellModel)
     T = t[generation]
     C = (cols===nothing) ? (1:4) : cols
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
@@ -213,6 +244,7 @@ function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 
+#=
 function see_parameters_SequentialFull(; generation::Int64=10, cols=nothing, kwargs...)
     t = load_sample("./applications/electro/Sequential_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
     T = t[generation]
@@ -226,6 +258,7 @@ function see_parameters_SequentialBest(; generation::Int64=10, cols=nothing, kwa
     C = cols===nothing ? (1:7) : cols
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
+=#
 
 X_labels = Dict(
     :base => "∅",
@@ -247,61 +280,33 @@ X_labels = Dict(
 )
 
 using StatsPlots
-export see_selection_xIC, see_selection_Bayes
+export see_selection
 
-function see_selection_xIC(; kwargs...)
-    T = load_Combinatorial()
-    lbl = [Symbol(sym...) for sym in all_labels]
+function see_selection(objective_func)
+    J = model_selection(objective_func)
+    lbl = keys(J)
+
     nam = [X_labels[k] for k in lbl]
-#    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+    J_vec = [J[k] for k in lbl]
 
-    AICVec = [sequential_AIC(T, k) for k in lbl]
-    AIC_sort = sortperm(AICVec, rev=true)
-    figA = bar(AICVec[AIC_sort]; xlim=(600,900), yticks=(1:16, nam[AIC_sort]), legend=:none, 
+    sort_idx = sortperm(J_vec)
+    fig = bar(J_vec[sort_idx]; 
+    yticks=(1:16, nam[sort_idx]), 
+    legend=:none, 
     orientation=:h,
-    xlabel="AIC",
     ylabel="Parameter space X")
 
-    BICVec = [sequential_BIC(T, k) for k in lbl]
-    BIC_sort = sortperm(BICVec, rev=true)
-    figB = bar(BICVec[BIC_sort]; xrotation=45, xlim=(600,900), yticks=(1:16, nam[BIC_sort]), legend=:none, 
-    orientation=:h,
-    xlabel="BIC")
-
-    fig = plot(figA, figB; layout = (1,2), kwargs...)
+    return fig
 end
 
-function see_selection_Bayes(fn::String="./applications/electro/test_loglikelihood.jld"; kwargs...)
-    test_loglikelihood = load(fn, "L")
-    lbl = [Symbol(sym...) for sym in all_labels]
-#    ctg = repeat(["AIC", "BIC"], inner=length(lbl))
+function see_selection(; kwargs...)
+    fig_AIC = see_selection(J_AIC)
+    fig_BIC = see_selection(J_BIC)
+    fig_0 = see_selection(J_0)
+    fig_2 = see_selection(J_2)
 
-    nam = [X_labels[k] for k in lbl]    
-    L = [test_loglikelihood[k] for k in lbl]
-    L .-= maximum(L)
-    broadcast!(exp, L, L)
-    L ./= sum(L)
-
-    L_sort = sortperm(L)
-    figA = bar(L[L_sort]; yticks=(1:16, nam[L_sort]), title="λ=0 (Uniform model prior)", legend=:none, 
-    orientation=:h,
-    xlabel="Posterior mass p_X",
-    ylabel="Parameter space X")
-
-    p2 = [test_loglikelihood[k] - 2*ndims(model_all[k]) for k in lbl]
-    p2 .-= maximum(p2)
-    broadcast!(exp, p2, p2)
-    p2 ./= sum(p2)
-#    broadcast!(log, p2, p2)
-
-    p2_sort = sortperm(p2)
-    figB = bar(p2[p2_sort]; yticks=(1:16, nam[p2_sort]), title="λ=2", legend=:none, 
-    orientation=:h,
-    xlabel="Posterior mass p_X")
-
-    fig = plot(figA, figB; layout = (1,2), kwargs...)
+    fig = plot(fig_AIC, fig_BIC, fig_0, fig_2, layout=(2,2))
 end
-
 
 ################################ Compare to data
 using StatsBase
@@ -325,10 +330,10 @@ end
 
 function visualise(F, T, N) 
     fig = plot()
-    for n in 1:N
+    for n = 1:N
         θ = θgen(T)
-        sol_n = F(; θ..., output_trajectory=true)
-        plot!(fig, broadcast(t->sol_n(t)[1], F.saveat))
+        sol_n = F(; θ..., output_trajectory=true)[1]
+        plot!(fig, broadcast(t->sol_n(t)[2], F.saveat))
     end
     plot!(fig; legend=:none, ratio=:equal, framestyle=:origin, xlabel="x", ylabel="y")
     return fig
@@ -560,10 +565,13 @@ function coarse_state()
 end
 
 export see_stationary_velocity
-function see_stationary_velocity(; kwargs...)
+function see_stationary_velocity(EMF, θ; kwargs...)
+
     fig = plot()
     
-    heatmap!(fig, -4:0.05:4, -4:0.05:4, (x,y)->stationary_velocity(complex(x,y); kwargs...);
+    ϕ(x,y) = stationarydist(EMF)(θ, 0.0)(complex(x,y))
+
+    heatmap!(fig, -4:0.05:4, -4:0.05:4, ϕ; 
         ratio=:equal,
         c=:Blues_9,
         xlims = (-4,4),
@@ -580,32 +588,30 @@ end
 export compare_stationary_velocity
 function compare_stationary_velocity()
 
-    pars = (polarised_speed = 1.0, EB_on = 1.5, EB_off=1.0, σ=0.25,
-    position_bias = 0.5,
-    speed_change = 1.0,
-    alignment_bias = 1.0,
-    polarity_bias = 0.5,
+    pars = (
+        v = 1.0, 
+        ΔW_on = 1.5, 
+        ΔW_off = 1.0, 
+        D=0.05,
+        γ1 = 0.5,
+        γ2 = 1.0,
+        γ3 = 1.0,
+        γ4 = 0.5,
     )
 
     EMF_off = NoEF()
     EMF_on = ConstantEF(complex(1.0))
 
-    fig_off = see_stationary_velocity(; pars..., EMF=EMF_off)
-    fig_on = see_stationary_velocity(; pars..., EMF=EMF_on)
-
-    v = pars.polarised_speed
-    γ1 = pars.position_bias
-    γ2 = pars.speed_change
-    γ3 = pars.alignment_bias
-    γ4 = pars.polarity_bias
+    fig_off = see_stationary_velocity(EMF_off, pars)
+    fig_on = see_stationary_velocity(EMF_on, pars)
 
     plot!(fig_off; title="Autonomous model", 
-    xticks = ([0, 1].*v, ["0","v"]),
-    yticks = ([0, 1].*v, ["0","v"]),
+    xticks = ([0, 1].*pars.v, ["0","v"]),
+    yticks = ([0, 1].*pars.v, ["0","v"]),
     )
     plot!(fig_on; title="Electrotactic model",
-    xticks = (([-(1+γ2-γ3), 0, (1+γ2+γ3)].*v) .+ (γ1*v), ["γ1 v - (1+γ2-γ3)v", "γ1 v","γ1 v + (1+γ2+γ3)v"]),
-    yticks = ([0, 1].*v*(1+γ2), ["0","(1+γ2) v"]),
+    xticks = (([-(1+pars.γ2-pars.γ3), 0, (1+pars.γ2+pars.γ3)].*pars.v) .+ (pars.γ1*pars.v), ["γ1 v - (1+γ2-γ3)v", "γ1 v","γ1 v + (1+γ2+γ3)v"]),
+    yticks = ([0, 1].*pars.v*(1+pars.γ2), ["0","(1+γ2) v"]),
     )
 
     line_opt = (label="", c=:black,)

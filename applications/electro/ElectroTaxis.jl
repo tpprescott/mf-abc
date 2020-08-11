@@ -10,8 +10,8 @@ export SingleCellModel, VelocityBias, SpeedIncrease, SpeedAlignment, PolarityBia
 # Base model
 SingleCellModel = NamedTuple{(
     :v,
-    :EB_on,
-    :EB_off,
+    :ΔW_on,
+    :ΔW_off,
     :D,
 ), NTuple{4, Float64}}
 # All the additional parameters are nondimensional and correspond to presence or absence of EM field of nondimensionalised magnitude 1 only

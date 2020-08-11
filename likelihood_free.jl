@@ -181,7 +181,14 @@ function save_sample(fn::String, t::Array{<:IndexedTable,1})
     logtest = make_array.(select.(t, :logtest))
     logp = select.(t, :logp)
     logq = select.(t, :logq)
-    save(fn, "θ", θ, "w", w, "logww", logww, "logp", logp, "logq", logq, "logtest", logtest)
+    save(fn, 
+        "θ", θ, 
+        "w", w, 
+        "logww", logww, 
+        "logp", logp, 
+        "logq", logq, 
+        "logtest", logtest,
+    )
     println("Success! Saved to $(fn)")
     return nothing
 end

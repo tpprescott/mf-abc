@@ -149,16 +149,16 @@ struct SingleCellSimulator{EMF<:AbstractEMField} <: AbstractSimulator
     end
 end
 
-function _map_barriers_to_coefficients(EB_on::Float64, EB_off::Float64)::NTuple{2,Float64}
-    λ = get_λ(EB_on, EB_off)
-    β = get_β(EB_on, λ)
+function _map_barriers_to_coefficients(ΔW_on::Float64, ΔW_off::Float64)::NTuple{2,Float64}
+    λ = get_λ(ΔW_on, ΔW_off)
+    β = get_β(ΔW_on, λ)
     return β, λ
 end
-function get_λ(EB_on, EB_off)
-    EB_on == EB_off && return 4/3
-    R = EB_off / (EB_on - EB_off)
+function get_λ(ΔW_on, ΔW_off)
+    ΔW_on == ΔW_off && return 4/3
+    R = ΔW_off / (ΔW_on - ΔW_off)
     D = sqrt(abs(R^2 + R^3))
-    if EB_on > EB_off
+    if ΔW_on > ΔW_off
         w = (R + D)^(1/3)
         delta = w - R/w
     else
@@ -172,8 +172,8 @@ function get_λ(EB_on, EB_off)
     end
     return 2 - delta
 end
-function get_β(EB_on, λ)
-    return -12.0 * EB_on / (((λ-1)^2)*(λ-4))
+function get_β(ΔW_on, λ)
+    return -12.0 * ΔW_on / (((λ-1)^2)*(λ-4))
 end
 
 gaussian_z(sigma)::Complex{Float64} = sigma*complex(randn(), randn())
@@ -224,7 +224,7 @@ end
 
 function (F::SingleCellSimulator)(n::Int64 = 1;
     # Common parameters
-    v::Float64, EB_on::Float64, EB_off::Float64, D::Float64,
+    v::Float64, ΔW_on::Float64, ΔW_off::Float64, D::Float64,
     # EMF parameters
     γ1::Float64=0.0, γ2::Float64=0.0, γ3::Float64=0.0, γ4::Float64=0.0, 
     # Coupling
@@ -235,7 +235,7 @@ function (F::SingleCellSimulator)(n::Int64 = 1;
     output_trajectory=false, 
     kwargs...)
 
-    β, λ = _map_barriers_to_coefficients(EB_on, EB_off)
+    β, λ = _map_barriers_to_coefficients(ΔW_on, ΔW_off)
     parm_p = (
         D=D,
         σ=sqrt(2*D),
@@ -276,9 +276,9 @@ eltype(::Type{T}) where T<:SingleCellSimulator = NamedTuple{(:y, :u0, :W), Tuple
 export stationarydist
 function stationarydist(EMF::AbstractEMField)
     get_polarity = polarity(EMF)
-    f = function (pos, p, t)
-        fun_polarity = get_polarity(pos, p, t)
-        β, λ = _map_barriers_to_coefficients(p.EB_on, p.EB_off)
+    f = function (p, t)
+        fun_polarity = get_polarity(p, t)
+        β, λ = _map_barriers_to_coefficients(p.ΔW_on, p.ΔW_off)
         fun_alignment(pol) = p.γ4 * alignment(pol, EMF(t))
         g = function (vel::Complex{Float64})
             pol = fun_polarity(vel)
