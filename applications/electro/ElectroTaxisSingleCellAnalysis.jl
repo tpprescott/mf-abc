@@ -7,17 +7,17 @@ import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
 
-const prior_support = [(0.001, 3.0) (0.0, 5.0) (0.0, 5.0) (0.001, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0,2.0)]
+const prior_support = [(0.001, 3.0) (0.001, 5.0) (0.001, 5.0) (0.001, 1.0) (0.0, 2.0) (0.0, 2.0) (0.0, 2.0) (0.0,2.0)]
 const prior_flat_components = Dict(
-    :SCM => DistributionGenerator(SingleCellModel, product_distribution(vec([Uniform(interval...) for interval in prior_support[1:4]]))),
-    :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
-    :Pol => DistributionGenerator(PolarityBias, Uniform(prior_support[6]...)),
-    :Pos => DistributionGenerator(PositionBias, Uniform(prior_support[7]...)),
-    :Ali => DistributionGenerator(AlignmentBias, Uniform(prior_support[8]...)),
+    :base => DistributionGenerator(SingleCellModel, product_distribution(vec([Uniform(interval...) for interval in prior_support[1:4]]))),
+    :g1 => DistributionGenerator(VelocityBias, Uniform(prior_support[5]...)),
+    :g2 => DistributionGenerator(SpeedIncrease, Uniform(prior_support[6]...)),
+    :g3 => DistributionGenerator(SpeedAlignment, Uniform(prior_support[7]...)),
+    :g4 => DistributionGenerator(PolarityBias, Uniform(prior_support[8]...)),
 )
 
 # ALL POSSIBLE MODELS FROM NoEF TO ALL BIASES
-all_labels = [[:SCM, lab...] for lab in powerset([:Spe, :Pol, :Pos, :Ali])]
+all_labels = [[:base, lab...] for lab in powerset([:g1, :g2, :g3, :g4])]
 form_generator(components::Dict, k1) = (Symbol(k1) => components[k1])
 form_generator(components::Dict, k1, keys...) = (Symbol(k1,keys...) => ProductGenerator(components[k1], (components[k] for k in keys)...))
 
@@ -33,9 +33,9 @@ const EMF = ConstantEF(1.0)
 const F_EF = SingleCellSimulator(σ_init=0.1, emf = EMF)
 
 export prior_NoEF, prior_Full, prior_Best
-const prior_NoEF = prior_flat_all[:SCM]
-const prior_Full = prior_flat_all[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
-const prior_Best = prior_flat_all[Symbol(:SCM, :Spe, :Pol, :Pos)]
+const prior_NoEF = prior_flat_all[:base]
+const prior_Full = prior_flat_all[Symbol(:base, :g1, :g2, :g3, :g4)]
+const prior_Best = prior_flat_all[Symbol(:base, :g1, :g2, :g4)]
 
 ######### NoEF
 
@@ -98,11 +98,11 @@ function posterior_NoEF()
     return q
 end
 prior_sequential_components() = Dict(
-    :SCM => posterior_NoEF(),
-    :Spe => DistributionGenerator(SpeedChange, Uniform(prior_support[5]...)),
-    :Pol => DistributionGenerator(PolarityBias, Uniform(prior_support[6]...)),
-    :Pos => DistributionGenerator(PositionBias, Uniform(prior_support[7]...)),
-    :Ali => DistributionGenerator(AlignmentBias, Uniform(prior_support[8]...)),
+    :base => posterior_NoEF(),
+    :g1 => DistributionGenerator(VelocityBias, Uniform(prior_support[5]...)),
+    :g2 => DistributionGenerator(SpeedChange, Uniform(prior_support[6]...)),
+    :g3 => DistributionGenerator(SpeedAlignment, Uniform(prior_support[7]...)),
+    :g4 => DistributionGenerator(PolarityBias, Uniform(prior_support[8]...)),
 )
 
 export prior_sequential_all, prior_sequential_full
@@ -110,7 +110,7 @@ function prior_sequential_all()
     prior_components = prior_sequential_components()
     return Dict(form_generator(prior_components, k...) for k in all_labels)
 end
-prior_sequential_full() = prior_sequential_all()[Symbol(:SCM, :Spe, :Pol, :Pos, :Ali)]
+prior_sequential_full() = prior_sequential_all()[Symbol(:base, :g1, :g2, :g3, :g4)]
 
 export Σ_Sequential_BSL_IS, Σ_Sequential_BSL_SMC
 function Σ_Sequential_BSL_IS(prior = prior_sequential_full())
@@ -228,22 +228,22 @@ function see_parameters_SequentialBest(; generation::Int64=10, cols=nothing, kwa
 end
 
 X_labels = Dict(
-    :SCM => "∅",
-    :SCMPos => "1",
-    :SCMSpe => "2",
-    :SCMAli => "3",
-    :SCMPol => "4",
-    :SCMSpePol => "2, 4",
-    :SCMSpePos => "1, 2",
-    :SCMSpeAli => "2, 3",
-    :SCMPolPos => "1, 4", 
-    :SCMPolAli => "3, 4",
-    :SCMPosAli => "1, 3",
-    :SCMSpePolPos => "1, 2, 4",
-    :SCMSpePolAli => "2, 3, 4",
-    :SCMSpePosAli => "1, 2, 3",
-    :SCMPolPosAli => "1, 3, 4",
-    :SCMSpePolPosAli => "1, 2, 3, 4",
+    :base => "∅",
+    :baseg1 => "1",
+    :baseg2 => "2",
+    :baseg3 => "3",
+    :baseg4 => "4",
+    :baseg1g2 => "1, 2",
+    :baseg1g3 => "1, 3",
+    :baseg1g4 => "1, 4",
+    :baseg2g3 => "2, 3", 
+    :baseg2g4 => "2, 4",
+    :baseg3g4 => "3, 4",
+    :baseg1g2g3 => "1, 2, 3",
+    :baseg1g2g4 => "1, 2, 4",
+    :baseg1g3g4 => "1, 3, 4",
+    :baseg2g3g4 => "2, 3, 4",
+    :baseg1g2g3g4 => "1, 2, 3, 4",
 )
 
 using StatsPlots
