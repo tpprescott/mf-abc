@@ -149,7 +149,7 @@ posweight = row -> row.weight>0
 export test_all_models
 function test_all_models()
     T_train = load_Combinatorial_trained()
-    for (id, t) in T
+    for (id, t) in T_train
         L = pmap(test_loglikelihood, t)
         fn = "./applications/electro/Seq_test_"*String(id)*".jld"
         save(fn, "L", L)
