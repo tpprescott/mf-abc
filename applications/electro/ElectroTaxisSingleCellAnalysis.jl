@@ -2,7 +2,9 @@ module ElectroTaxisSingleCellAnalysis
 
 using ..ElectroTaxis
 using ..LikelihoodFree
-using Distributions, LinearAlgebra, IndexedTables, Combinatorics, InvertedIndices, JLD
+using Distributions, LinearAlgebra 
+using IndexedTables, Combinatorics, InvertedIndices, JLD
+using Distributed
 import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
