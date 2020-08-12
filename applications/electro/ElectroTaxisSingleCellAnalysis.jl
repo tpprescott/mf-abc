@@ -4,7 +4,7 @@ using ..ElectroTaxis
 using ..LikelihoodFree
 using Distributions, LinearAlgebra 
 using IndexedTables, Combinatorics, InvertedIndices, JLD
-using Distributed
+using Distributed, ProgressMeter
 import .LikelihoodFree.domain
 import .LikelihoodFree.ndims
 
@@ -152,7 +152,7 @@ export test_all_models
 function test_all_models()
     T_train = load_Combinatorial_trained()
     for (id, t) in T_train
-        L = pmap(test_loglikelihood, t)
+        L = @showprogress pmap(test_loglikelihood, t)
         fn = "./applications/electro/Seq_test_"*String(id)*".jld"
         save(fn, "L", L)
     end
