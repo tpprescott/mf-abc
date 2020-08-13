@@ -269,9 +269,10 @@ function T_on(sol; pbar)
     i = findfirst(px->ispolarised(px; pbar=pbar), sol.u)
     return sol.t[i]
 end
-function T_on(θ::NamedTuple; pbar=0.8, n=500)
+function T_on(θ::NamedTuple; n=500)
     sols = F_NoEF_long(n; θ..., U0=fill([complex(0.0),complex(0.0)],n), output_trajectory=true)
-    return mean(sol->T_on(sol; pbar=pbar), sols)
+    λ = ElectroTaxis.get_λ(θ.ΔW_on, θ.ΔW_off)
+    return mean(sol->T_on(sol; pbar=sqrt(λ-1)), sols)
 end
 
 function T_off(sol; pbar)
@@ -280,13 +281,15 @@ function T_off(sol; pbar)
 end
 function T_off(θ::NamedTuple; pbar=0.2, n=500)
     sols = F_NoEF_long(n; θ..., U0=fill([complex(1.0),complex(0.0)],n), output_trajectory=true)
-    return mean(sol->T_off(sol; pbar=pbar), sols)
+    λ = ElectroTaxis.get_λ(θ.ΔW_on, θ.ΔW_off)
+    return mean(sol->T_off(sol; pbar=sqrt(λ-1)), sols)
 end
 
 Π(sol; pbar) = ispolarised(sol[end]; pbar=pbar)
 function Π(θ::NamedTuple; pbar=0.6, n=500)
     sols = F_NoEF_long(n; θ..., output_trajectory=true)
-    return mean(sol->Π(sol; pbar=pbar), sols)
+    λ = ElectroTaxis.get_λ(θ.ΔW_on, θ.ΔW_off)
+    return mean(sol->Π(sol; pbar=sqrt(λ-1)), sols)
 end
 
 export extend_outputs_NoEF, see_outputs_NoEF
