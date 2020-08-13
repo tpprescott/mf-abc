@@ -145,9 +145,6 @@ end
 const tester = ((L_NoEF_BSL(500), L_EF_BSL(500)), (y_obs_NoEF[test_idx_NoEF], y_obs_EF[test_idx_EF]))
 test_loglikelihood(row) = loglikelihood(tester, row.θ).logw
 
-export posweight
-posweight = row -> row.weight>0
-
 export test_all_models
 function test_all_models()
     T_train = load_Combinatorial_trained()
@@ -176,7 +173,7 @@ function load_Combinatorial_tested(id::Symbol, ::Type{Θ}) where Θ
     
     t = load_sample(fn_1, Θ)
     L = load(fn_2, "L")
-    out = pushcol(t[end], :loglh_test, L)
+    out = transform(t[end], :loglh_test => L)
     return out
 end
 
@@ -240,9 +237,9 @@ function see_parameters_NoEF(; generation::Int64=10, cols=nothing, kwargs...)
 end
 
 function see_parameters_Joint(; generation::Int64=10, cols=nothing, kwargs...)
-    t = load_sample("./applications/electro/Joint_BSL_SMC.jld", merge(SingleCellModel, SingleCellBiases))
+    t = load_sample("./applications/electro/Joint_SMC.jld", merge(SingleCellModel, VelocityBias, SpeedIncrease, PolarityBias))
     T = t[generation]
-    C = cols===nothing ? (1:8) : cols
+    C = cols===nothing ? (1:7) : cols
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 
@@ -261,6 +258,56 @@ function see_parameters_SequentialBest(; generation::Int64=10, cols=nothing, kwa
     fig = parameterweights(filter(r->r.weight>0, T); xlim=prior_support[C], columns=C, kwargs...)
 end
 =#
+
+
+################################ SEE MODEL OUTPUTS
+
+const F_NoEF_long = SingleCellSimulator(tspan=(0.0, 1000.0))
+
+ispolarised(px; pbar) = (abs(px[1]) >= pbar)
+function T_on(sol; pbar)
+    i = findfirst(px->ispolarised(px; pbar=pbar), sol.u)
+    return sol.t[i]
+end
+function T_on(θ::NamedTuple; pbar=0.8, n=500)
+    sols = F_NoEF_long(n; θ..., U0=fill([complex(0.0),complex(0.0)],n), output_trajectory=true)
+    return mean(sol->T_on(sol; pbar=pbar), sols)
+end
+
+function T_off(sol; pbar)
+    i = findfirst(px->!ispolarised(px; pbar=pbar), sol.u)
+    return sol.t[i]
+end
+function T_off(θ::NamedTuple; pbar=0.2, n=500)
+    sols = F_NoEF_long(n; θ..., U0=fill([complex(1.0),complex(0.0)],n), output_trajectory=true)
+    return mean(sol->T_off(sol; pbar=pbar), sols)
+end
+
+Π(sol; pbar) = ispolarised(sol[end]; pbar=pbar)
+function Π(θ::NamedTuple; pbar=0.6, n=500)
+    sols = F_NoEF_long(n; θ..., output_trajectory=true)
+    return mean(sol->Π(sol; pbar=pbar), sols)
+end
+
+export extend_outputs_NoEF, see_outputs_NoEF
+function extend_outputs_NoEF(; kwargs...)
+    T = load_sample("./applications/electro/NoEF_SMC.jld", SingleCellModel)
+    t = filter(posweight, T[end])
+    for func_name in (:T_on, :T_off, :Π)
+        println(func_name)
+        func(θ) = eval(func_name)(θ; kwargs...)
+        t = new_par(func_name, func, t)
+    end
+    save_sample("./applications/electro/NoEF_SMC_extend.jld", [t])
+end
+function see_outputs_NoEF()
+    t = load_sample("./applications/electro/NoEF_SMC_extend.jld", merge(SingleCellModel, NamedTuple{(:T_on, :T_off, :Π), NTuple{3,Float64}}))[end]
+    fig = parameterweights(t, columns=[1,5,6,7])
+    return fig
+end
+
+
+################################ SEE SELECTION
 
 X_labels = Dict(
     :base => "∅",

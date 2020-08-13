@@ -176,16 +176,16 @@ function get_β(ΔW_on, λ)
     return -12.0 * ΔW_on / (((λ-1)^2)*(λ-4))
 end
 
-gaussian_z(sigma)::Complex{Float64} = sigma*complex(randn(), randn())
+gaussian_z(sigma)::Complex{Float64} = sigma*randn(ComplexF64)
 const NOISEFORM = [complex(1.0), complex(0.0)]
 const B_t = WienerProcess(0.0, [complex(0.0)])
 
-function couple_noise(ind_flags, u0, W; ic_sigma=0.1)
+function couple_noise(U0, ind_flags, u0, W)
     fun = function(prob, i, repeat)
         if ind_flags[i]
-            remake(prob, u0=[gaussian_z(ic_sigma), complex(0.0)])
+            remake(prob, u0=U0[i])
         else
-            remake(prob, u0=u0[i], noise= NoiseWrapper(W[i]))
+            remake(prob, u0=u0[i], noise=NoiseWrapper(W[i]))
         end
     end
     return fun
@@ -227,9 +227,11 @@ function (F::SingleCellSimulator)(n::Int64 = 1;
     v::Float64, ΔW_on::Float64, ΔW_off::Float64, D::Float64,
     # EMF parameters
     γ1::Float64=0.0, γ2::Float64=0.0, γ3::Float64=0.0, γ4::Float64=0.0, 
+    # Specify initial conditions
+    U0 = [[gaussian_z(F.σ_init), 0] for i in 1:n],
     # Coupling
     ind_flags::Array{Bool, 1}=fill(true, n), 
-    u0=fill(complex(0.0), n), 
+    u0=fill(0.0, n), 
     W=fill(B_t, n),
     # What to save
     output_trajectory=false, 
@@ -255,14 +257,14 @@ function (F::SingleCellSimulator)(n::Int64 = 1;
     prob_nominal = SDEProblem(
         f!, 
         g!,
-        [complex(0.0), complex(0.0)],
+        fill(complex(0.0), 2),
         F.tspan,
         (parm_p, parm_x),
         noise_rate_prototype = NOISEFORM,
     )
     prob = EnsembleProblem(
         prob_nominal, 
-        prob_func = couple_noise(ind_flags, u0, W, ic_sigma=F.σ_init),
+        prob_func = couple_noise(U0, ind_flags, u0, W),
         output_func = output_func(F.saveat, W, ind_flags, output_trajectory),
     )
 
